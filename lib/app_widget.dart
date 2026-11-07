@@ -16,6 +16,7 @@ import 'package:kazumi/bean/dialog/exit_confirmation_dialog.dart';
 import 'package:kazumi/bean/settings/theme_provider.dart';
 import 'package:kazumi/navigation.dart';
 import 'package:kazumi/utils/constants.dart';
+import 'package:kazumi/utils/app_mode.dart';
 import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/utils/theme.dart';
 
@@ -295,6 +296,27 @@ class _AppWidgetState extends State<AppWidget>
           themeMode: themeProvider.themeMode,
           scaffoldMessengerKey: rootScaffoldMessengerKey,
           routerConfig: ModularApp.routerConfigOf(context),
+          builder: (context, child) {
+            if (child == null) return const SizedBox.shrink();
+            if (!AppMode.isTv) return child;
+            // 电视形态：声明为「非触摸」导航模式，让 InkWell / 按钮显示焦点高亮，
+            // 同时把 hover / splash 这类鼠标语义关掉。
+            final media = MediaQuery.of(context);
+            return Theme(
+              data: Theme.of(context).copyWith(
+                focusColor: Colors.white24,
+                hoverColor: Colors.transparent,
+                highlightColor: Colors.white10,
+                splashFactory: NoSplash.splashFactory,
+              ),
+              child: MediaQuery(
+                data: media.copyWith(
+                  navigationMode: NavigationMode.traditional,
+                ),
+                child: child,
+              ),
+            );
+          },
         );
       },
     );

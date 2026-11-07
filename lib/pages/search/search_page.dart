@@ -16,6 +16,7 @@ import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/pages/search/search_controller.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/utils/constants.dart';
+import 'package:kazumi/utils/app_mode.dart';
 import 'package:kazumi/utils/date_time.dart';
 import 'package:kazumi/utils/search_parser.dart';
 
@@ -56,6 +57,11 @@ class _SearchPageState extends State<SearchPage> {
     if (widget.initialQuery.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _submit(widget.initialQuery);
+      });
+    } else if (AppMode.isTv) {
+      // 电视形态：进页即把焦点给输入框，OK 直接调起系统输入法。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _inputFocus.requestFocus();
       });
     }
   }

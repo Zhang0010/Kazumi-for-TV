@@ -126,6 +126,8 @@ class MainActivity: AudioServiceActivity() {
             } else if (call.method == "getAndroidSdkVersion") {
                 val sdkVersion = getAndroidSdkVersion()
                 result.success(sdkVersion)
+            } else if (call.method == "isTvDevice") {
+                result.success(isTvDevice())
             } else if (call.method == "setSystemBarsHidden") {
                 systemBarsHidden = call.arguments as? Boolean ?: false
                 applySystemBarsState()
@@ -204,6 +206,18 @@ class MainActivity: AudioServiceActivity() {
 
     private fun getAndroidSdkVersion(): Int {
         return Build.VERSION.SDK_INT
+    }
+
+    /**
+     * TV / 盒子判定：Leanback 特性、UiMode=TELEVISION 或没有触摸屏。
+     * 三者取或，因为不少外贸盒子不声明 leanback，而投影往往上报 TV。
+     */
+    private fun isTvDevice(): Boolean {
+        val uiModeType = resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK
+        val isTelevision = uiModeType == Configuration.UI_MODE_TYPE_TELEVISION
+        val hasLeanback = packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+        val hasTouch = packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
+        return hasLeanback || isTelevision || !hasTouch
     }
 
     // System bars belong to the full size window; replayed on leaving PiP.

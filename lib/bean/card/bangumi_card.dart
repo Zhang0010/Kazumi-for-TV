@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
+import 'package:kazumi/bean/widget/tv_focus_ring.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 
@@ -19,7 +20,9 @@ class BangumiCardV extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return TvFocusRing(
+      borderRadius: 12,
+      child: Card(
       elevation: 0,
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
@@ -65,6 +68,7 @@ class BangumiCardV extends StatelessWidget {
             ],
           ),
         ),
+      ),
       ),
     );
   }

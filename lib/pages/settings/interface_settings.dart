@@ -5,6 +5,7 @@ import 'package:kazumi/bean/settings/settings_dropdown_tile.dart';
 import 'package:kazumi/bean/settings/settings_list.dart';
 import 'package:kazumi/modules/collect/collect_layout.dart';
 import 'package:kazumi/services/storage/storage.dart';
+import 'package:kazumi/utils/app_mode.dart';
 import 'package:kazumi/utils/device.dart';
 
 class InterfaceSettingsPage extends StatefulWidget {
@@ -20,6 +21,12 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
   late CollectLayout _defaultCollectLayout;
   bool _savingCollectLayout = false;
   static const _exitBehaviorTitles = ['退出 Kazumi', '最小化至托盘', '每次都询问'];
+  static const _interfaceModeTitles = {
+    0: '自动识别',
+    1: '电视（遥控器）',
+    2: '手机 / 平板',
+  };
+  int _interfaceMode = GStorage.getSetting(SettingsKeys.interfaceMode).clamp(0, 2);
   int _exitBehavior = GStorage.getSetting(SettingsKeys.exitBehavior)
       .clamp(0, _exitBehaviorTitles.length - 1);
 
@@ -101,6 +108,30 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
               initialValue: showRating,
             ),
           ]),
+          if (!isDesktop())
+            SettingsSection(title: const Text('显示形态'), tiles: [
+              SettingsDropdownTile<int>(
+                leading: Icons.tv_rounded,
+                title: const Text('界面模式'),
+                description: const Text(
+                  '自动识别：按系统的电视 / 触摸能力判断\n'
+                  '电视模式：遥控器操作、无触摸手势、无鼠标悬停\n'
+                  '修改后需要重启应用生效',
+                ),
+                value: _interfaceMode,
+                options: _interfaceModeTitles,
+                onChanged: (value) async {
+                  setState(() => _interfaceMode = value);
+                  await AppMode.setMode(switch (value) {
+                    1 => AppInterfaceMode.tv,
+                    2 => AppInterfaceMode.phone,
+                    _ => AppInterfaceMode.auto,
+                  });
+                  if (!mounted) return;
+                  KazumiDialog.showToast(message: '已保存，重启后生效');
+                },
+              ),
+            ]),
           if (isDesktop())
             SettingsSection(
               title: const Text('窗口行为'),

@@ -10,6 +10,8 @@ import 'package:kazumi/pages/player/player_screenshot_feedback_overlay.dart';
 import 'package:kazumi/pages/player/player_screenshot_sheet.dart';
 import 'package:kazumi/pages/player/controller/player_screenshot_controller.dart';
 import 'package:kazumi/pages/player/syncplay_sheet.dart';
+import 'package:kazumi/utils/app_mode.dart';
+import 'package:kazumi/pages/player/tv/player_tv_osd.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/player/pip_utils.dart';
@@ -1349,7 +1351,12 @@ class _PlayerItemState extends State<PlayerItem>
     unawaited(_bindAudioService());
     playerTimer = getPlayerTimer();
     windowManager.addListener(this);
-    showVideoController();
+    if (AppMode.isTv) {
+      // 电视形态开局不弹 OSD：遥控器按 ↑/↓ 呼出，OK 直接播放/暂停。
+      widget.keyboardFocus.requestFocus();
+    } else {
+      showVideoController();
+    }
   }
 
   @override
@@ -1404,6 +1411,9 @@ class _PlayerItemState extends State<PlayerItem>
               },
               child: Listener(
                 onPointerSignal: (pointerSignal) {
+                  if (AppMode.isTv) {
+                    return;
+                  }
                   if (pointerSignal is PointerScrollEvent) {
                     _handleMouseScroller();
                     final scrollDelta = pointerSignal.scrollDelta;
@@ -1414,12 +1424,13 @@ class _PlayerItemState extends State<PlayerItem>
                 },
                 child: SizedBox.expand(
                   child: Stack(alignment: Alignment.center, children: [
-                    PlayerKeyboardShortcuts(
-                      focusScopeNode: widget.keyboardFocus,
-                      actions: keyboardActions,
-                      longPressActions: keyboardLongPressActions,
-                      isBlocked: () => _openPlayerMenuCount > 0,
-                    ),
+                    if (!AppMode.isTv)
+                      PlayerKeyboardShortcuts(
+                        focusScopeNode: widget.keyboardFocus,
+                        actions: keyboardActions,
+                        longPressActions: keyboardLongPressActions,
+                        isBlocked: () => _openPlayerMenuCount > 0,
+                      ),
                     Center(
                       key: _videoSurfaceKey,
                       child: PlayerItemSurface(
@@ -1434,7 +1445,8 @@ class _PlayerItemState extends State<PlayerItem>
                             ),
                           )
                         : Container(),
-                    GestureDetector(
+                    if (!AppMode.isTv)
+                      GestureDetector(
                       onTapDown: (details) {
                         _lastTapPointerKind = details.kind;
                       },
@@ -1521,44 +1533,85 @@ class _PlayerItemState extends State<PlayerItem>
                     (Platform.isAndroid &&
                             (videoPageController.isPip || _pipEnterRequested))
                         ? const SizedBox.shrink()
-                        : PlayerItemPanel(
-                            fillsWindow: widget.fillsWindow,
-                            playerController: playerController,
-                            videoPageController: videoPageController,
-                            onBackPressed: widget.onBackPressed,
-                            setPlaybackSpeed: setPlaybackSpeed,
-                            showDanmakuSwitch: showDanmakuSwitch,
-                            onToggleSidePanel: widget.onToggleSidePanel,
-                            handleFullscreen: handleFullscreen,
-                            enterAndroidPictureInPicture:
-                                enterAndroidPictureInPicture,
-                            handleProgressBarDragStart:
-                                handleProgressBarDragStart,
-                            handleProgressBarDragEnd: handleProgressBarDragEnd,
-                            handleSuperResolutionChange:
-                                handleSuperResolutionChange,
-                            onNextEpisode: () => handlePreNextEpisode('next'),
-                            panelVisibilityController:
-                                _panelVisibilityController,
-                            keyboardFocus: widget.keyboardFocus,
-                            acquirePlayerPanelHold: acquirePlayerPanelHold,
-                            onMenuVisibilityChanged:
-                                _handlePlayerMenuVisibilityChanged,
-                            handleDanmaku: handleDanmaku,
-                            showVideoInfo: showVideoInfo,
-                            showSyncPlayPanel: showSyncPlayPanel,
-                            pauseForTimedShutdown: widget.pauseForTimedShutdown,
-                            disableAnimations: widget.disableAnimations,
-                            handleScreenShot: handleScreenshot,
-                            showScreenshotCandidates: showScreenshotCandidates,
-                            skipOP: skipOP,
-                          ),
+                        : AppMode.isTv
+                            ? PlayerTvOsd(
+                                playerController: playerController,
+                                videoPageController: videoPageController,
+                                playerFocusNode: widget.keyboardFocus,
+                                onBackPressed: widget.onBackPressed,
+                                onShowOsd: showVideoController,
+                                onHideOsd: hideVideoController,
+                                onSeekBy: (seconds) {
+                                  unawaited(
+                                    _seekWithPlayerTimer(
+                                      () => playerController.seekBy(
+                                        Duration(seconds: seconds),
+                                      ),
+                                    ),
+                                  );
+                                },
+                                onNextEpisode: () =>
+                                    handlePreNextEpisode('next'),
+                                onPreviousEpisode: () =>
+                                    handlePreNextEpisode('prev'),
+                                onChangeEpisode: (episode, road) {
+                                  unawaited(
+                                    widget.changeEpisode(
+                                      episode,
+                                      currentRoad: road,
+                                    ),
+                                  );
+                                },
+                                onToggleDanmaku: handleDanmaku,
+                                onFullscreen: handleFullscreen,
+                                onScreenshot: handleScreenshot,
+                                onSkipOP: skipOP,
+                                setPlaybackSpeed: setPlaybackSpeed,
+                              )
+                            : PlayerItemPanel(
+                                fillsWindow: widget.fillsWindow,
+                                playerController: playerController,
+                                videoPageController: videoPageController,
+                                onBackPressed: widget.onBackPressed,
+                                setPlaybackSpeed: setPlaybackSpeed,
+                                showDanmakuSwitch: showDanmakuSwitch,
+                                onToggleSidePanel: widget.onToggleSidePanel,
+                                handleFullscreen: handleFullscreen,
+                                enterAndroidPictureInPicture:
+                                    enterAndroidPictureInPicture,
+                                handleProgressBarDragStart:
+                                    handleProgressBarDragStart,
+                                handleProgressBarDragEnd:
+                                    handleProgressBarDragEnd,
+                                handleSuperResolutionChange:
+                                    handleSuperResolutionChange,
+                                onNextEpisode: () =>
+                                    handlePreNextEpisode('next'),
+                                panelVisibilityController:
+                                    _panelVisibilityController,
+                                keyboardFocus: widget.keyboardFocus,
+                                acquirePlayerPanelHold: acquirePlayerPanelHold,
+                                onMenuVisibilityChanged:
+                                    _handlePlayerMenuVisibilityChanged,
+                                handleDanmaku: handleDanmaku,
+                                showVideoInfo: showVideoInfo,
+                                showSyncPlayPanel: showSyncPlayPanel,
+                                pauseForTimedShutdown:
+                                    widget.pauseForTimedShutdown,
+                                disableAnimations: widget.disableAnimations,
+                                handleScreenShot: handleScreenshot,
+                                showScreenshotCandidates:
+                                    showScreenshotCandidates,
+                                skipOP: skipOP,
+                              ),
                     Positioned.fill(
                       left: 16,
                       top: 25,
                       right: 15,
                       bottom: 15,
-                      child: (isDesktop() || playerController.panel.lockPanel)
+                      child: (isDesktop() ||
+                              AppMode.isTv ||
+                              playerController.panel.lockPanel)
                           ? Container()
                           : PlayerGestureDetector(
                               onSeekStart: () {

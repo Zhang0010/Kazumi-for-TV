@@ -6,6 +6,7 @@ import 'package:kazumi/bean/widget/embedded_native_control_area.dart';
 import 'package:kazumi/navigation.dart';
 import 'package:kazumi/pages/menu/route_visibility.dart';
 import 'package:kazumi/pages/router.dart';
+import 'package:kazumi/utils/app_mode.dart';
 
 class ScaffoldMenu extends StatefulWidget {
   const ScaffoldMenu({super.key, required this.location});
@@ -173,12 +174,8 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
       topLeft: Radius.circular(16),
       bottomLeft: Radius.circular(16),
     );
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-      body: Row(
-        children: [
-          EmbeddedNativeControlArea(
-            child: NavigationRail(
+    final Widget rail = EmbeddedNativeControlArea(
+      child: NavigationRail(
               backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
               groupAlignment: 1,
               leading: FloatingActionButton(
@@ -213,9 +210,47 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
               selectedIndex: selectedIndex,
               onDestinationSelected: _selectDestination,
             ),
-          ),
-          Expanded(child: _outlet(context, borderRadius: borderRadius)),
-        ],
+    );
+
+    if (!AppMode.isTv) {
+      return Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+        body: Row(
+          children: [
+            rail,
+            Expanded(child: _outlet(context, borderRadius: borderRadius)),
+          ],
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      body: Focus(
+        skipTraversal: true,
+        onKeyEvent: (node, event) {
+          // 数字键 1-4 直接切 tab（电视惯例，可在设置里关）。
+          if (event is KeyDownEvent) {
+            final index = switch (event.logicalKey) {
+              LogicalKeyboardKey.digit1 => 0,
+              LogicalKeyboardKey.digit2 => 1,
+              LogicalKeyboardKey.digit3 => 2,
+              LogicalKeyboardKey.digit4 => 3,
+              _ => null,
+            };
+            if (index != null) {
+              _selectDestination(index);
+              return KeyEventResult.handled;
+            }
+          }
+          return KeyEventResult.ignored;
+        },
+        child: Row(
+          children: [
+            rail,
+            Expanded(child: _outlet(context, borderRadius: borderRadius)),
+          ],
+        ),
       ),
     );
   }

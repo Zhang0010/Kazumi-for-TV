@@ -31,4 +31,19 @@ class PlatformEnvironmentService {
       return 0;
     }
   }
+
+  /// 是否电视类设备（Leanback / UiMode=TELEVISION / 无触摸屏）。
+  static Future<bool> isTvDevice() async {
+    if (!Platform.isAndroid) {
+      return false;
+    }
+    try {
+      return await _intentChannel.invokeMethod<bool>('isTvDevice') ?? false;
+    } on PlatformException catch (e) {
+      KazumiLogger().e("Failed to detect TV device: '${e.message}'.");
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
 }

@@ -261,6 +261,12 @@ class SettingsKeys {
     null,
     group: SettingGroup.interface,
   );
+  /// 界面形态：0 自动 / 1 强制电视 / 2 强制手机（需重启生效）
+  static const interfaceMode = SettingKey<int>(
+    'interfaceMode',
+    0,
+    group: SettingGroup.interface,
+  );
   static const enableGitProxy = SettingKey<bool>(
     _SettingBoxKey.enableGitProxy,
     true,

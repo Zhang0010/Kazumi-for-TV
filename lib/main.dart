@@ -19,6 +19,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:kazumi/pages/error/storage_error_page.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:kazumi/utils/device.dart';
+import 'package:kazumi/utils/app_mode.dart';
 import 'package:kazumi/services/platform/desktop_window_config.dart';
 import 'package:kazumi/services/platform/webview_feature_service.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
@@ -30,6 +31,10 @@ void main() async {
   registerEchHttpLicenses();
   MediaKit.ensureInitialized();
   if (Platform.isAndroid || Platform.isIOS) {
+    if (Platform.isAndroid) {
+      // 电视形态：先判定，再决定系统栏 / 方向策略。
+      await AppMode.initialize();
+    }
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       systemNavigationBarColor: Colors.transparent,
@@ -39,6 +44,12 @@ void main() async {
   }
 
   if (Platform.isAndroid) {
+    if (AppMode.isTv) {
+      await SystemChrome.setPreferredOrientations(
+        [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight],
+      );
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    }
     await WebViewFeatureService.initialize();
   }
 
