@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
+import 'package:kazumi/bean/widget/tv_focus_ring.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/pages/my/my_controller.dart';
 import 'package:kazumi/pages/onboarding/steps/disclaimer_step.dart';
@@ -15,6 +16,7 @@ import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/services/platform/app_exit.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/update/startup_update_check.dart';
+import 'package:kazumi/utils/app_mode.dart';
 
 class OnboardingPage extends StatefulWidget {
   const OnboardingPage({
@@ -43,6 +45,9 @@ enum _OnboardingStep {
 
 class _OnboardingPageState extends State<OnboardingPage> {
   final _pageController = PageController();
+  // 电视形态下焦点必须先落在主按钮上：否则没有 primaryFocus，
+  // 方向键找不到遍历起点，按上下左右全无反应。
+  final _primaryFocusNode = FocusNode(debugLabel: 'onboarding-primary');
   final _steps = [
     _OnboardingStep.welcome,
     if (Platform.isAndroid) _OnboardingStep.updates,
@@ -61,12 +66,21 @@ class _OnboardingPageState extends State<OnboardingPage> {
   void initState() {
     super.initState();
     _useGithubUpdate = GStorage.getSetting(SettingsKeys.autoUpdate);
+    if (AppMode.isTv) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _focusPrimary());
+    }
   }
 
   @override
   void dispose() {
+    _primaryFocusNode.dispose();
     _pageController.dispose();
     super.dispose();
+  }
+
+  void _focusPrimary() {
+    if (!mounted || !AppMode.isTv) return;
+    _primaryFocusNode.requestFocus();
   }
 
   Widget _buildStep(_OnboardingStep step) => switch (step) {
@@ -114,6 +128,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
         curve: Curves.easeInOutCubicEmphasized,
       );
     }
+    // 翻页时上面 unfocus 过，电视形态要重新把焦点放回主按钮
+    _focusPrimary();
   }
 
   Future<void> _finish() async {
@@ -155,6 +171,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
           textStyle: theme.textTheme.titleMedium
               ?.copyWith(fontWeight: FontWeight.w600),
         ),
+        focusNode: AppMode.isTv ? _primaryFocusNode : null,
+        autofocus: AppMode.isTv,
         onPressed: () => _navigate(forward: true),
         iconAlignment: IconAlignment.end,
         icon: Icon(
@@ -167,13 +185,17 @@ class _OnboardingPageState extends State<OnboardingPage> {
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [primary, const SizedBox(height: 4), secondary],
+                children: [
+                  TvFocusRing(borderRadius: 28, child: primary),
+                  const SizedBox(height: 4),
+                  TvFocusRing(borderRadius: 28, child: secondary),
+                ],
               )
             : Row(children: [
-                secondary,
+                TvFocusRing(borderRadius: 28, child: secondary),
                 const SizedBox(width: 16),
                 const Spacer(),
-                primary,
+                TvFocusRing(borderRadius: 28, child: primary),
               ]),
       );
     });
