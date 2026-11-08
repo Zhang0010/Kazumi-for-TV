@@ -139,6 +139,10 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     final view = View.of(context);
     final viewport = view.physicalSize / view.devicePixelRatio;
     if (rect.bottom <= _tvBarAnchor.rect.bottom) return false;
+    // 满屏容器（整页兜底的 Focus）不算落脚点
+    if (rect.width * rect.height >= viewport.width * viewport.height * 0.4) {
+      return false;
+    }
     if (rect.top >= viewport.height || rect.right <= 0 || rect.left >= viewport.width) {
       return false;
     }
@@ -185,6 +189,12 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
         continue;
       }
       if (!node.canRequestFocus) continue;
+      // 有些页面会在最外层套一个「整片区域」的 Focus（用来接快捷键、兜住焦点），
+      // 它同样是可聚焦的，矩形又刚好铺满内容区、top 也最靠上——不排除掉的话，
+      // 下键永远落在这种看不见的容器上，表现就是整页「选不了」。
+      if (rect.width * rect.height >= viewport.width * viewport.height * 0.4) {
+        continue;
+      }
       candidates.add(node);
     }
     if (candidates.isNotEmpty) {

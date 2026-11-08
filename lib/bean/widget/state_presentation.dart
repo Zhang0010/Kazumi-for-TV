@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:material_new_shapes/material_new_shapes.dart';
 
+import 'package:kazumi/bean/widget/tv_focus_ring.dart';
+
 class StateIconBadge extends StatelessWidget {
   const StateIconBadge({
     super.key,
@@ -89,7 +91,11 @@ class StateActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final button = _tonal ? FilledButton.tonalIcon : FilledButton.icon;
     final label = Text(text, textAlign: TextAlign.center);
-    return button(
+    // 电视形态统一焦点表达：按钮本身不带白框时，遥控器选中它看不出任何变化。
+    return TvFocusRing(
+      borderRadius: 28,
+      scale: 1.06,
+      child: button(
       onPressed: onPressed,
       style: styleOf(context),
       icon: icon == null ? null : Icon(icon, size: 20),
@@ -108,6 +114,7 @@ class StateActionButton extends StatelessWidget {
                 label,
               ],
             ),
+    ),
     );
   }
 }

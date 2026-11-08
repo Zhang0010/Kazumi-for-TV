@@ -16,6 +16,40 @@ class _CollectCategories extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    // 电视形态：TabBar 内部的 InkWell 握焦点，但焦点框画不进它里面，
+    // 看起来就是「选了但没反应」。这里换成和时间表星期条同一套胶囊：
+    // 外层圆角容器 + primary 高亮 + TvFocusRing 白框。
+    if (AppMode.isTv) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(28),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: ValueListenableBuilder(
+            valueListenable: selected,
+            builder: (context, value, _) => SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (var i = 0; i < _collectCategories.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: _TvCategoryPill(
+                        label: _collectCategories[i]?.label ?? '全部',
+                        count: count(_collectCategories[i]),
+                        selected: value == _collectCategories[i],
+                        onTap: () => controller.animateTo(i),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     // Each lerped weight is a new font instance, so TabBar animates only the
     // color and the selected label turns bold once per category change.
     final labelStyle =
@@ -84,7 +118,9 @@ class _CollectLayoutSwitch extends StatelessWidget {
       spacing: 2,
       children: [
         for (final layout in [CollectLayout.cards, CollectLayout.list])
-          Semantics(
+          TvFocusRing(
+            borderRadius: 24,
+            child: Semantics(
             selected: value == layout,
             inMutuallyExclusiveGroup: true,
             child: IconButton.filledTonal(
@@ -124,6 +160,7 @@ class _CollectLayoutSwitch extends StatelessWidget {
                   : Icons.grid_view_rounded),
             ),
           ),
+          ),
       ],
     );
   }
@@ -152,6 +189,24 @@ class _CollectSortMenu extends StatelessWidget {
           ),
       ],
       builder: (context, toggle) {
+        if (AppMode.isTv) {
+          return TvFocusRing(
+            borderRadius: 24,
+            scale: 1.06,
+            child: Tooltip(
+              message: '排序：${value.label}',
+              child: FilledButton.tonalIcon(
+                onPressed: toggle,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 48),
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                ),
+                icon: const Icon(Icons.sort_rounded, size: 20),
+                label: Text(value.label),
+              ),
+            ),
+          );
+        }
         return Tooltip(
           message: '排序：${value.label}',
           child: showLabel
@@ -171,6 +226,65 @@ class _CollectSortMenu extends StatelessWidget {
                 ),
         );
       },
+    );
+  }
+}
+
+
+/// 时间表星期条的同款胶囊：选中填 primary、未选中透明，焦点由 TvFocusRing 白框表达。
+class _TvCategoryPill extends StatelessWidget {
+  const _TvCategoryPill({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final foreground = selected ? colors.onPrimary : colors.onSurfaceVariant;
+    return TvFocusRing(
+      borderRadius: 24,
+      child: Material(
+        color: selected ? colors.primary : Colors.transparent,
+        borderRadius: BorderRadius.circular(24),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: foreground,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '$count',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: selected
+                        ? colors.onPrimary.withValues(alpha: 0.8)
+                        : colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

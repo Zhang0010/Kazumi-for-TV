@@ -10,6 +10,7 @@ import 'package:kazumi/modules/collect/collect_layout.dart';
 import 'package:kazumi/modules/collect/collect_module.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/pages/collect/collect_library_query.dart';
+import 'package:kazumi/utils/app_mode.dart';
 
 part 'collect_library_card.dart';
 part 'collect_library_controls.dart';
@@ -71,7 +72,9 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
   @override
   void initState() {
     super.initState();
-    _selectedType.addListener(_libraryFocus.requestFocus);
+    // 电视形态下不要这条：换分类就把焦点抓到这个无名节点上，
+    // 屏幕上没有任何变化，遥控器立刻变成「按了没反应」。
+    if (!AppMode.isTv) _selectedType.addListener(_libraryFocus.requestFocus);
   }
 
   @override
@@ -172,7 +175,10 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
       },
       child: Focus(
         focusNode: _libraryFocus,
-        autofocus: true,
+        // 电视上这一层只作为快捷键宿主，不能自己去抢焦点：
+        // 它没有任何画面，抢到就等于把遥控器交进黑洞。
+        autofocus: !AppMode.isTv,
+        canRequestFocus: !AppMode.isTv,
         child: LayoutBuilder(builder: (context, constraints) {
           final compact = constraints.maxWidth < 600;
           final paged = mobile &&
