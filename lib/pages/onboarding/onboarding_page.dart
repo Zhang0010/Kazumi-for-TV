@@ -49,6 +49,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   // 电视形态下焦点必须先落在主按钮上：否则没有 primaryFocus，
   // 方向键找不到遍历起点，按上下左右全无反应。
   final _primaryFocusNode = FocusNode(debugLabel: 'onboarding-primary');
+  final _secondaryFocusNode = FocusNode(debugLabel: 'onboarding-secondary');
   // 记住「继续」之前焦点停在哪个选项上，按左键能原地回去
   FocusNode? _lastContentFocus;
   final _steps = [
@@ -81,6 +82,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
       FocusManager.instance.removeEarlyKeyEventHandler(_handleEarlyKey);
     }
     _primaryFocusNode.dispose();
+    _secondaryFocusNode.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -116,22 +118,37 @@ class _OnboardingPageState extends State<OnboardingPage> {
     final isDown = event is KeyDownEvent;
     final primary = FocusManager.instance.primaryFocus;
     final onPrimary = identical(primary, _primaryFocusNode);
+    final onSecondary = identical(primary, _secondaryFocusNode);
+    // 底部那排按钮（退出 / 上一步 / 继续）之外的节点都算「内容区」
+    final onContent = !onPrimary && !onSecondary;
+
+    /// 焦点从底部按钮回到内容区上次停留的选项
+    void backToContent() {
+      final target = _lastContentFocus;
+      if (target != null && target.context != null && target.canRequestFocus) {
+        target.requestFocus();
+      }
+    }
 
     if (key == LogicalKeyboardKey.arrowRight) {
       if (isDown && !onPrimary) {
-        if (primary != null && primary is! FocusScopeNode) {
+        // 底部行是 [退出/上一步] …… [继续]，右键一律落到主按钮
+        if (onContent && primary != null && primary is! FocusScopeNode) {
           _lastContentFocus = primary;
-          _primaryFocusNode.requestFocus();
         }
+        _primaryFocusNode.requestFocus();
       }
       return KeyEventResult.handled;
     }
 
-    // arrowLeft
-    if (isDown && onPrimary) {
-      final target = _lastContentFocus;
-      if (target != null && target.context != null && target.canRequestFocus) {
-        target.requestFocus();
+    // arrowLeft：内容区 → 左下的次要按钮（第一页是退出，其余是上一步）；
+    // 主按钮 → 内容区上次的落点；次要按钮 → 内容区。
+    if (isDown) {
+      if (onContent) {
+        _lastContentFocus = primary;
+        _secondaryFocusNode.requestFocus();
+      } else {
+        backToContent();
       }
     }
     return KeyEventResult.handled;
@@ -214,6 +231,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
             constraints.maxWidth < 320 ||
             MediaQuery.textScalerOf(context).scale(16) > 24;
         final secondary = TextButton(
+          focusNode: AppMode.isTv ? _secondaryFocusNode : null,
           style: TextButton.styleFrom(
             minimumSize: const Size(88, 56),
             foregroundColor: theme.colorScheme.onSurfaceVariant,
