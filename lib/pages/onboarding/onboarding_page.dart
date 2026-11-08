@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
@@ -48,6 +49,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
   // 电视形态下焦点必须先落在主按钮上：否则没有 primaryFocus，
   // 方向键找不到遍历起点，按上下左右全无反应。
   final _primaryFocusNode = FocusNode(debugLabel: 'onboarding-primary');
+  // 记住「继续」之前焦点停在哪个选项上，按左键能原地回去
+  FocusNode? _lastContentFocus;
   final _steps = [
     _OnboardingStep.welcome,
     if (Platform.isAndroid) _OnboardingStep.updates,
@@ -83,24 +86,61 @@ class _OnboardingPageState extends State<OnboardingPage> {
     _primaryFocusNode.requestFocus();
   }
 
+  /// 电视形态的引导页只有一路「往下走」：右键直接落到主按钮上，
+  /// 不用先盲猜焦点在哪。左键从主按钮退回刚才停留的选项。
+  KeyEventResult _handleNavKey(FocusNode node, KeyEvent event) {
+    if (!AppMode.isTv || event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    final primary = FocusManager.instance.primaryFocus;
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      if (primary != null && !identical(primary, _primaryFocusNode)) {
+        _primaryFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft &&
+        identical(primary, _primaryFocusNode)) {
+      final target = _lastContentFocus;
+      if (target != null && target.context != null && target.canRequestFocus) {
+        target.requestFocus();
+      } else {
+        primary?.focusInDirection(TraversalDirection.left);
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// 焦点进入步骤内容区时记一下落点，供左键回退使用。
+  void _rememberContentFocus(bool hasFocus) {
+    if (!hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final primary = FocusManager.instance.primaryFocus;
+      if (primary == null || identical(primary, _primaryFocusNode)) return;
+      if (primary is FocusScopeNode) return;
+      _lastContentFocus = primary;
+    });
+  }
+
   Widget _buildStep(_OnboardingStep step) => switch (step) {
-        _OnboardingStep.welcome => const DisclaimerStep(),
-        _OnboardingStep.updates => UpdateSourceStep(
-            useGithubUpdate: _useGithubUpdate,
-            onChanged: (value) {
-              setState(() => _useGithubUpdate = value);
-              unawaited(GStorage.putSetting(SettingsKeys.autoUpdate, value));
-            },
-          ),
-        _OnboardingStep.mirrors => const MirrorSettingsStep(),
-        _OnboardingStep.rules => PluginShopStep(controller: _pluginsController),
-      };
+    _OnboardingStep.welcome => const DisclaimerStep(),
+    _OnboardingStep.updates => UpdateSourceStep(
+      useGithubUpdate: _useGithubUpdate,
+      onChanged: (value) {
+        setState(() => _useGithubUpdate = value);
+        unawaited(GStorage.putSetting(SettingsKeys.autoUpdate, value));
+      },
+    ),
+    _OnboardingStep.mirrors => const MirrorSettingsStep(),
+    _OnboardingStep.rules => PluginShopStep(controller: _pluginsController),
+  };
 
   String get _primaryLabel => !_agreed
       ? '同意并继续'
       : _isLastStep
-          ? '开始使用'
-          : '继续';
+      ? '开始使用'
+      : '继续';
 
   Future<void> _navigate({required bool forward}) async {
     if (_busy || (!forward && _currentIndex == 0)) return;
@@ -143,108 +183,126 @@ class _OnboardingPageState extends State<OnboardingPage> {
     await GStorage.putSetting(SettingsKeys.onboardingCompleted, true);
     if (!mounted) return;
     final myController = widget.myController;
-    unawaited(runStartupUpdateCheck(
-      isEnabled: () => GStorage.getSetting(SettingsKeys.autoUpdate),
-      checkForUpdate: () => myController.checkUpdate(type: 'auto'),
-    ));
+    unawaited(
+      runStartupUpdateCheck(
+        isEnabled: () => GStorage.getSetting(SettingsKeys.autoUpdate),
+        checkForUpdate: () => myController.checkUpdate(type: 'auto'),
+      ),
+    );
     context.navigate(GStorage.getSetting(SettingsKeys.defaultStartupPage));
   }
 
   Widget _buildBottomBar(BuildContext context) {
     final theme = Theme.of(context);
-    return LayoutBuilder(builder: (context, constraints) {
-      final stacked = constraints.maxWidth < 320 ||
-          MediaQuery.textScalerOf(context).scale(16) > 24;
-      final secondary = TextButton(
-        style: TextButton.styleFrom(
-          minimumSize: const Size(88, 56),
-          foregroundColor: theme.colorScheme.onSurfaceVariant,
-        ),
-        onPressed:
-            _currentIndex == 0 ? AppExit.quit : () => _navigate(forward: false),
-        child: Text(_currentIndex == 0 ? '退出' : '上一步'),
-      );
-      final primary = FilledButton.icon(
-        style: FilledButton.styleFrom(
-          minimumSize: const Size(176, 56),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          textStyle: theme.textTheme.titleMedium
-              ?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        focusNode: AppMode.isTv ? _primaryFocusNode : null,
-        autofocus: AppMode.isTv,
-        onPressed: () => _navigate(forward: true),
-        iconAlignment: IconAlignment.end,
-        icon: Icon(
-            _isLastStep ? Icons.check_rounded : Icons.arrow_forward_rounded),
-        label: Text(_primaryLabel),
-      );
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: stacked
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  TvFocusRing(borderRadius: 28, child: primary),
-                  const SizedBox(height: 4),
-                  TvFocusRing(borderRadius: 28, child: secondary),
-                ],
-              )
-            : Row(children: [
-                TvFocusRing(borderRadius: 28, child: secondary),
-                const SizedBox(width: 16),
-                const Spacer(),
-                TvFocusRing(borderRadius: 28, child: primary),
-              ]),
-      );
-    });
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stacked =
+            constraints.maxWidth < 320 ||
+            MediaQuery.textScalerOf(context).scale(16) > 24;
+        final secondary = TextButton(
+          style: TextButton.styleFrom(
+            minimumSize: const Size(88, 56),
+            foregroundColor: theme.colorScheme.onSurfaceVariant,
+          ),
+          onPressed: _currentIndex == 0
+              ? AppExit.quit
+              : () => _navigate(forward: false),
+          child: Text(_currentIndex == 0 ? '退出' : '上一步'),
+        );
+        final primary = FilledButton.icon(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(176, 56),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            textStyle: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          focusNode: AppMode.isTv ? _primaryFocusNode : null,
+          autofocus: AppMode.isTv,
+          onPressed: () => _navigate(forward: true),
+          iconAlignment: IconAlignment.end,
+          icon: Icon(
+            _isLastStep ? Icons.check_rounded : Icons.arrow_forward_rounded,
+          ),
+          label: Text(_primaryLabel),
+        );
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: stacked
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TvFocusRing(borderRadius: 28, child: primary),
+                    const SizedBox(height: 4),
+                    TvFocusRing(borderRadius: 28, child: secondary),
+                  ],
+                )
+              : Row(
+                  children: [
+                    TvFocusRing(borderRadius: 28, child: secondary),
+                    const SizedBox(width: 16),
+                    const Spacer(),
+                    TvFocusRing(borderRadius: 28, child: primary),
+                  ],
+                ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) => PopScope(
-        canPop: false,
-        onPopInvokedWithResult: (bool didPop, Object? result) {
-          if (!didPop) unawaited(_navigate(forward: false));
-        },
-        child: Scaffold(
-          appBar: const SysAppBar(),
-          body: SafeArea(
-            top: false,
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1184),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                      horizontal:
-                          MediaQuery.sizeOf(context).width < 600 ? 20 : 32),
-                  child: Column(
-                    children: [
-                      _OnboardingProgress(
-                        labels: _steps.map((step) => step.label).toList(),
-                        currentIndex: _currentIndex,
+    canPop: false,
+    onPopInvokedWithResult: (bool didPop, Object? result) {
+      if (!didPop) unawaited(_navigate(forward: false));
+    },
+    child: Scaffold(
+      appBar: const SysAppBar(),
+      body: SafeArea(
+        top: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1184),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: MediaQuery.sizeOf(context).width < 600 ? 20 : 32,
+              ),
+              // 按键宿主必须同时包住步骤内容和底部按钮：键事件从当前焦点
+              // 往上冒泡，只包内容区的话「继续」按钮上的左键就收不到。
+              child: Focus(
+                canRequestFocus: false,
+                skipTraversal: true,
+                onKeyEvent: _handleNavKey,
+                onFocusChange: _rememberContentFocus,
+                child: Column(
+                  children: [
+                    _OnboardingProgress(
+                      labels: _steps.map((step) => step.label).toList(),
+                      currentIndex: _currentIndex,
+                    ),
+                    Expanded(
+                      child: PageView(
+                        controller: _pageController,
+                        physics: _agreed
+                            ? null
+                            : const NeverScrollableScrollPhysics(),
+                        onPageChanged: (index) {
+                          setState(() => _currentIndex = index);
+                        },
+                        children: _steps.map(_buildStep).toList(),
                       ),
-                      Expanded(
-                        child: PageView(
-                          controller: _pageController,
-                          physics: _agreed
-                              ? null
-                              : const NeverScrollableScrollPhysics(),
-                          onPageChanged: (index) {
-                            setState(() => _currentIndex = index);
-                          },
-                          children: _steps.map(_buildStep).toList(),
-                        ),
-                      ),
-                      _buildBottomBar(context),
-                    ],
-                  ),
+                    ),
+                    _buildBottomBar(context),
+                  ],
                 ),
               ),
             ),
           ),
         ),
-      );
+      ),
+    ),
+  );
 }
 
 class _SkipRulesDialog extends StatelessWidget {
@@ -252,32 +310,27 @@ class _SkipRulesDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        scrollable: true,
-        constraints: const BoxConstraints(maxWidth: 560),
-        icon: const Icon(Icons.warning_amber_rounded),
-        title: const Text('暂不添加规则？'),
-        content: const Text(
-          '没有规则时无法搜索和播放番剧。之后也可以在规则管理中添加。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('仍然继续'),
-          ),
-          FilledButton(
-            autofocus: true,
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('返回添加'),
-          ),
-        ],
-      );
+    scrollable: true,
+    constraints: const BoxConstraints(maxWidth: 560),
+    icon: const Icon(Icons.warning_amber_rounded),
+    title: const Text('暂不添加规则？'),
+    content: const Text('没有规则时无法搜索和播放番剧。之后也可以在规则管理中添加。'),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(true),
+        child: const Text('仍然继续'),
+      ),
+      FilledButton(
+        autofocus: true,
+        onPressed: () => Navigator.of(context).pop(false),
+        child: const Text('返回添加'),
+      ),
+    ],
+  );
 }
 
 class _OnboardingProgress extends StatelessWidget {
-  const _OnboardingProgress({
-    required this.labels,
-    required this.currentIndex,
-  });
+  const _OnboardingProgress({required this.labels, required this.currentIndex});
 
   final List<String> labels;
   final int currentIndex;
@@ -295,37 +348,48 @@ class _OnboardingProgress extends StatelessWidget {
           padding: const EdgeInsets.only(top: 8, bottom: 12),
           child: Column(
             children: [
-              Row(children: [
-                Expanded(
-                  child: Text(labels[currentIndex],
-                      style: theme.textTheme.labelLarge?.copyWith(
-                          color: colors.primary, fontWeight: FontWeight.w700)),
-                ),
-                Text('${currentIndex + 1} / ${labels.length}',
-                    style: theme.textTheme.labelLarge
-                        ?.copyWith(color: colors.onSurfaceVariant)),
-              ]),
-              const SizedBox(height: 12),
-              Row(children: [
-                for (var i = 0; i < labels.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 6),
+              Row(
+                children: [
                   Expanded(
-                    child: AnimatedContainer(
-                      duration: MediaQuery.disableAnimationsOf(context)
-                          ? Duration.zero
-                          : const Duration(milliseconds: 250),
-                      curve: Curves.easeInOutCubicEmphasized,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: i <= currentIndex
-                            ? colors.primary
-                            : colors.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(3),
+                    child: Text(
+                      labels[currentIndex],
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: colors.primary,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
+                  Text(
+                    '${currentIndex + 1} / ${labels.length}',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
                 ],
-              ]),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  for (var i = 0; i < labels.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 6),
+                    Expanded(
+                      child: AnimatedContainer(
+                        duration: MediaQuery.disableAnimationsOf(context)
+                            ? Duration.zero
+                            : const Duration(milliseconds: 250),
+                        curve: Curves.easeInOutCubicEmphasized,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: i <= currentIndex
+                              ? colors.primary
+                              : colors.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ],
           ),
         ),
