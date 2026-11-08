@@ -61,10 +61,8 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
   final FocusNode _progressFocus = FocusNode(debugLabel: 'tv-progress');
   final FocusNode _speedFocus = FocusNode(debugLabel: 'tv-speed');
   final FocusNode _danmakuFocus = FocusNode(debugLabel: 'tv-danmaku');
-  final FocusNode _fullscreenFocus = FocusNode(debugLabel: 'tv-fullscreen');
   final FocusNode _backFocus = FocusNode(debugLabel: 'tv-back');
   final FocusNode _episodesFocus = FocusNode(debugLabel: 'tv-episodes');
-  final FocusNode _skipFocus = FocusNode(debugLabel: 'tv-skip');
 
   Timer? _okLongPressTimer;
   bool _okLongPressFired = false;
@@ -100,10 +98,8 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
     _progressFocus.dispose();
     _speedFocus.dispose();
     _danmakuFocus.dispose();
-    _fullscreenFocus.dispose();
     _backFocus.dispose();
     _episodesFocus.dispose();
-    _skipFocus.dispose();
     super.dispose();
   }
 
@@ -432,38 +428,8 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
                   ),
                 ),
               ),
-              _TvTextButton(
-                focusNode: _episodesFocus,
-                icon: Icons.video_library_rounded,
-                label: '选集',
-                onPressed: _openDrawer,
-              ),
-              _TvTextButton(
-                focusNode: _danmakuFocus,
-                icon: widget.playerController.danmaku.danmakuOn
-                    ? Icons.subtitles_rounded
-                    : Icons.subtitles_off_rounded,
-                label: widget.playerController.danmaku.danmakuOn ? '弹幕 开' : '弹幕 关',
-                onPressed: widget.onToggleDanmaku,
-              ),
-              _TvTextButton(
-                focusNode: _fullscreenFocus,
-                icon: Icons.fullscreen_rounded,
-                label: '全屏',
-                onPressed: widget.onFullscreen,
-              ),
-              _TvTextButton(
-                focusNode: _speedFocus,
-                icon: Icons.speed_rounded,
-                label: '${widget.playerController.playback.playerSpeed}x',
-                onPressed: _openSpeedMenu,
-              ),
-              _TvTextButton(
-                focusNode: _skipFocus,
-                icon: Icons.fast_forward_rounded,
-                label: '跳过',
-                onPressed: widget.onSkipOP,
-              ),
+              // 顶部只留返回 + 标题：原来右上角一排文字按钮挂在标题旁边，
+              // 既挤又离视线中心远；常用功能已经挪到底部按钮行。
             ],
           ),
         ),
@@ -530,6 +496,29 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
                     fontFeatures: [FontFeature.tabularFigures()],
                   ),
                 ),
+              ),
+              const SizedBox(width: 20),
+              // 常用的三个功能放在底部按钮行末尾：视线不用来回跳，
+              // ←→ 一直走就能到，不用先去碰顶部条。
+              _TvTextButton(
+                focusNode: _episodesFocus,
+                icon: Icons.video_library_rounded,
+                label: '剧集',
+                onPressed: _openDrawer,
+              ),
+              _TvTextButton(
+                focusNode: _danmakuFocus,
+                icon: widget.playerController.danmaku.danmakuOn
+                    ? Icons.subtitles_rounded
+                    : Icons.subtitles_off_rounded,
+                label: widget.playerController.danmaku.danmakuOn ? '弹幕 开' : '弹幕 关',
+                onPressed: widget.onToggleDanmaku,
+              ),
+              _TvTextButton(
+                focusNode: _speedFocus,
+                icon: Icons.speed_rounded,
+                label: '${widget.playerController.playback.playerSpeed}x',
+                onPressed: _openSpeedMenu,
               ),
             ],
           ),
