@@ -34,6 +34,16 @@ class BangumiInfoCardV extends StatefulWidget {
 class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
   int touchedIndex = -1;
 
+  /// 电视上并排两颗动作按钮的统一样式：高度、字号、内边距、图标尺寸一致，
+  /// 标签都是两个字，宽度自然就相同。
+  ButtonStyle _tvActionStyle(BuildContext context) {
+    return FilledButton.styleFrom(
+      minimumSize: const Size(0, 46),
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+    );
+  }
+
   Widget get voteBarChart {
     return Flexible(
       child: Column(
@@ -273,9 +283,9 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
                         ),
                         // 追番 + 开始观看并排。加载骨架里也照样占位，
                         // 数据回来时按钮不会突然从下面冒出来。
-                        // 电视上追番和开始观看并排，两个按钮同高、宽度按内容自适应，
-                        // 外面再套一层 scaleDown，系统字号调大时只会缩字不会撑破版式。
-                        // 加载骨架里同样占位，数据回来时按钮不会突然冒出来挤一下。
+                        // 电视上「观看」和「未追」并排，两个按钮用同一套样式
+                        // （同字号、同内边距、同图标尺寸），宽度自然就一致了。
+                        // 之前给固定宽度反而逼得四字标签缩字号，两个按钮一胖一瘦。
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -286,14 +296,10 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
                                 child: FilledButton.tonalIcon(
                                   onPressed:
                                       widget.isLoading ? null : widget.onPlay,
-                                  style: FilledButton.styleFrom(
-                                    minimumSize: const Size(0, 46),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 22),
-                                  ),
+                                  style: _tvActionStyle(context),
                                   icon: const Icon(Icons.play_arrow_rounded,
-                                      size: 22),
-                                  label: const Text('开始观看'),
+                                      size: 20),
+                                  label: const Text('观看'),
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -302,19 +308,9 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
                               TvFocusRing(
                                 borderRadius: 24,
                                 scale: 1.06,
-                                child: SizedBox(
-                                  width: 168,
-                                  height: 46,
-                                  child: FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: SizedBox(
-                                      width: 168,
-                                      height: 46,
-                                      child: CollectButton.extend(
-                                        bangumiItem: widget.bangumiItem,
-                                      ),
-                                    ),
-                                  ),
+                                child: CollectButton.extend(
+                                  bangumiItem: widget.bangumiItem,
+                                  style: _tvActionStyle(context),
                                 ),
                               )
                             else

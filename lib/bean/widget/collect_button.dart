@@ -13,6 +13,7 @@ class CollectButton extends StatefulWidget {
     this.color = Colors.white,
     this.onOpen,
     this.onClose,
+    this.style,
   }) : _isExtended = false;
 
   const CollectButton.extend({
@@ -21,6 +22,7 @@ class CollectButton extends StatefulWidget {
     this.color = Colors.white,
     this.onOpen,
     this.onClose,
+    this.style,
   }) : _isExtended = true;
 
   final BangumiItem bangumiItem;
@@ -28,6 +30,9 @@ class CollectButton extends StatefulWidget {
   final bool _isExtended;
   final VoidCallback? onOpen;
   final VoidCallback? onClose;
+
+  /// 电视形态下需要和旁边的按钮同尺寸，这里把按钮样式交给调用方决定。
+  final ButtonStyle? style;
 
   @override
   State<CollectButton> createState() => _CollectButtonState();
@@ -73,6 +78,7 @@ class _CollectButtonState extends State<CollectButton> {
         child: widget._isExtended
             ? FilledButton.icon(
                 onPressed: toggle,
+                style: widget.style,
                 icon: Icon(_iconFor(collectType)),
                 label: Text(_labelFor(collectType)),
               )
