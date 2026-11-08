@@ -19,6 +19,7 @@ import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/utils/app_mode.dart';
 import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/utils/theme.dart';
+import 'package:kazumi/utils/tv_activate.dart';
 
 class AppWidget extends StatefulWidget {
   const AppWidget({super.key});
@@ -312,9 +313,11 @@ class _AppWidgetState extends State<AppWidget>
             );
             return Theme(
               data: Theme.of(context).copyWith(
-                focusColor: Colors.white.withValues(alpha: 0.22),
+                // 焦点统一由 TvFocusRing 的白框表达，不再叠 Material 的半透明高亮，
+                // 避免同一时刻出现「底色高亮 + 白框」两套选中语言。
+                focusColor: Colors.transparent,
                 hoverColor: Colors.transparent,
-                highlightColor: Colors.white12,
+                highlightColor: Colors.white10,
                 splashFactory: NoSplash.splashFactory,
               ),
               child: MediaQuery(
@@ -322,14 +325,27 @@ class _AppWidgetState extends State<AppWidget>
                   navigationMode: NavigationMode.traditional,
                   size: logicalSize,
                 ),
-                child: ClipRect(
-                  child: FittedBox(
-                    fit: BoxFit.fill,
-                    alignment: Alignment.topLeft,
-                    child: SizedBox(
-                      width: logicalSize.width,
-                      height: logicalSize.height,
-                      child: child,
+                child: Shortcuts(
+                  shortcuts: tvActivateShortcuts,
+                  child: Actions(
+                    actions: <Type, Action<Intent>>{
+                      ActivateIntent: CallbackAction<ActivateIntent>(
+                        onInvoke: (_) {
+                          tvActivateFocused();
+                          return null;
+                        },
+                      ),
+                    },
+                    child: ClipRect(
+                      child: FittedBox(
+                        fit: BoxFit.fill,
+                        alignment: Alignment.topLeft,
+                        child: SizedBox(
+                          width: logicalSize.width,
+                          height: logicalSize.height,
+                          child: child,
+                        ),
+                      ),
                     ),
                   ),
                 ),

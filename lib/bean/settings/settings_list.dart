@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:kazumi/bean/widget/content_section.dart';
 import 'package:kazumi/bean/widget/split_list_row.dart';
+import 'package:kazumi/bean/widget/tv_focus_ring.dart';
 
 enum _TileKind { plain, toggle, radio }
 
@@ -171,7 +172,7 @@ class SettingsCategoryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    return InkWell(
+    return TvFocusRing(borderRadius: 16, child: InkWell(
       onTap: onTap,
       onHighlightChanged: SplitListRow.pressReporterOf(context),
       child: Padding(
@@ -215,7 +216,7 @@ class SettingsCategoryTile extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -375,7 +376,7 @@ class SettingsTile<T> extends StatelessWidget {
     final secondary =
         enabled ? colorScheme.onSurfaceVariant : _disabledOn(context);
 
-    return InkWell(
+    return TvFocusRing(borderRadius: 16, child: InkWell(
       onTap: _tapHandler(context),
       onHighlightChanged: SplitListRow.pressReporterOf(context),
       child: Padding(
@@ -421,6 +422,6 @@ class SettingsTile<T> extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ));
   }
 }

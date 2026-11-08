@@ -28,7 +28,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
       FocusNode(debugLabel: 'tv-top-bar', skipTraversal: true, canRequestFocus: false);
 
   /// 电视形态：当前选中 tab 那颗胶囊的焦点节点，UP 到顶时把焦点交给它。
-  final FocusNode _tvNavFocus = FocusNode(debugLabel: 'tv-nav-selected');
+  final GlobalKey<TvTopBarState> _topBarKey = GlobalKey<TvTopBarState>();
 
   /// 电视形态：最后一次落在内容区的焦点节点，从导航条按 DOWN 时回到这里。
   FocusNode? _lastContentFocus;
@@ -61,7 +61,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
       // 路由自带的 FocusScope 会先抢到初始焦点，导航条上的 autofocus 抢不过它，
       // 结果就是「进了主界面却没有任何一个控件被选中」。这里在首帧后显式把焦点按到当前 tab。
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _tvNavFocus.requestFocus();
+        if (mounted) _topBarKey.currentState?.focusSelected();
       });
     }
   }
@@ -69,7 +69,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   @override
   void dispose() {
     _tvBarAnchor.dispose();
-    _tvNavFocus.dispose();
+
     rootRouteObserver.unsubscribe(this);
     super.dispose();
   }
@@ -82,28 +82,70 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   bool _isInTopBar(FocusNode? node) {
     if (node == null) return false;
     if (identical(node, _tvBarAnchor)) return true;
+    if (_topBarKey.currentState?.owns(node) ?? false) return true;
     return node.ancestors.contains(_tvBarAnchor);
   }
 
-  /// 从导航条往下进内容区：优先回到上次停留的控件（跨 scope 的 requestFocus 是允许的），
-  /// 没有历史（比如刚切完 tab）就按遍历顺序找第一个位于导航条下方、可聚焦的节点。
+  /// 把焦点送回导航条当前 tab 的胶囊。
+  void _focusTopBar() {
+    _topBarKey.currentState?.focusSelected();
+  }
+
+  /// 节点还能不能用：既要有挂载的 element、可聚焦，还要真的落在屏幕可见范围里。
+  /// 只判断 context 不够——切 tab 或返回上一页后，旧节点可能仍挂在树上，
+  /// 但位置在可视区之外，焦点按过去就「看不见、也走不动」。
+  bool _isFocusableAndVisible(FocusNode node) {
+    if (node.context == null || !node.canRequestFocus) return false;
+    final rect = node.rect;
+    if (rect.height <= 0 || rect.width <= 0) return false;
+    final size = MediaQuery.of(context).size;
+    if (rect.bottom <= _tvBarAnchor.rect.bottom) return false;
+    if (rect.top >= size.height || rect.right <= 0 || rect.left >= size.width) {
+      return false;
+    }
+    return true;
+  }
+
+  /// 从导航条往下进内容区。
+  ///
+  /// 之前按遍历顺序取「第一个在导航条下方的节点」，在 1080p 上会挑到列表末尾
+  /// 那些还没滚出屏幕、但视觉上在页面底部的小控件，看起来就像「按下键没反应」。
+  /// 改成按几何位置挑：取最靠上的一行，同行里取离当前导航胶囊最近的那个。
   bool _focusContent() {
     final last = _lastContentFocus;
-    if (last != null && last.context != null && last.canRequestFocus) {
+    if (last != null && !_isFocusableAndVisible(last)) {
+      _lastContentFocus = null;
+    } else if (last != null) {
       last.requestFocus();
       return true;
     }
-    final double barBottom = _tvBarAnchor.rect.bottom;
+    final anchor = _tvBarAnchor.rect;
+    if (anchor.isEmpty) return false;
+    final double barBottom = anchor.bottom;
+    final primary = FocusManager.instance.primaryFocus;
+    final double wantX = primary?.rect.center.dx ?? anchor.center.dx;
+
+    final candidates = <FocusNode>[];
     for (final node in FocusManager.instance.rootScope.traversalDescendants) {
       if (_isInTopBar(node)) continue;
       if (!node.canRequestFocus) continue;
       final rect = node.rect;
       if (rect.height <= 0 || rect.width <= 0) continue;
       if (rect.top < barBottom - 1) continue;
-      node.requestFocus();
-      return true;
+      candidates.add(node);
     }
-    return false;
+    if (candidates.isEmpty) return false;
+    candidates.sort((a, b) {
+      final ra = a.rect;
+      final rb = b.rect;
+      final rowA = (ra.top / 8).round();
+      final rowB = (rb.top / 8).round();
+      if (rowA != rowB) return rowA.compareTo(rowB);
+      return (ra.center.dx - wantX).abs().compareTo((rb.center.dx - wantX).abs());
+    });
+    final target = candidates.first;
+    target.requestFocus();
+    return true;
   }
 
   @override
@@ -126,8 +168,14 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     }
     final outlet = _outletKey.currentState;
     if (outlet == null) return;
+    // 换 tab 等于换了一整套内容节点，旧页面的焦点必须丢掉：
+    // 留着它会让「下键」把焦点按回上一个 tab 里那个已经看不见的控件，
+    // 表现就是「按了没反应」。
+    _lastContentFocus = null;
     outlet.navigate('/tab${menu.getPath(index)}/');
     setState(() => _selectedIndex = index);
+    // 换 tab 后焦点要跟着落到新的胶囊上，否则数字键切完 tab 焦点还留在旧格。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _focusTopBar());
   }
 
   void _handleSystemBack(BuildContext context) {
@@ -328,7 +376,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
               LogicalKeyboardKey.arrowLeft,
               LogicalKeyboardKey.arrowRight,
             }.contains(event.logicalKey)) {
-              _tvNavFocus.requestFocus();
+              _focusTopBar();
               return KeyEventResult.handled;
             }
             return KeyEventResult.ignored;
@@ -338,16 +386,14 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
           if (!inTopBar && event.logicalKey == LogicalKeyboardKey.arrowUp) {
             final moved = primary.focusInDirection(TraversalDirection.up);
             if (!moved) {
-              _tvNavFocus.requestFocus();
+              _focusTopBar();
             }
             return KeyEventResult.handled;
           }
 
           // 下键：从导航条回到内容区，回到上次停留的那一格。
           if (inTopBar && event.logicalKey == LogicalKeyboardKey.arrowDown) {
-            if (_focusContent()) {
-              return KeyEventResult.handled;
-            }
+            if (_focusContent()) return KeyEventResult.handled;
           }
           return KeyEventResult.ignored;
         },
@@ -358,8 +404,8 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
               child: Focus(
                 focusNode: _tvBarAnchor,
                 child: TvTopBar(
+                  key: _topBarKey,
                   selectedIndex: selectedIndex,
-                  navFocusNode: _tvNavFocus,
                   onSelect: _selectDestination,
                   onSearch: () => context.pushNamed('/search/'),
                   onHistory: () => context.pushNamed('/settings/history/'),
