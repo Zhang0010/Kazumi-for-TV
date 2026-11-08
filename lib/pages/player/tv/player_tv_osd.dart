@@ -76,6 +76,18 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
 
   bool _drawerOpen = false;
 
+  /// 选集里每个格子的焦点节点/定位 key：用来在没有焦点时自主挑一个落脚点。
+  final Map<int, FocusNode> _episodeFocusNodes = {};
+  final Map<int, GlobalKey> _episodeKeys = {};
+
+  FocusNode _episodeFocusNode(int episode) => _episodeFocusNodes.putIfAbsent(
+    episode,
+    () => FocusNode(debugLabel: 'tv-episode-$episode'),
+  );
+
+  GlobalKey _episodeKey(int episode) =>
+      _episodeKeys.putIfAbsent(episode, () => GlobalKey());
+
   bool get _osdVisible => widget.playerController.panel.showVideoController;
 
   @override
@@ -98,6 +110,9 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
     _danmakuFocus.dispose();
     _backFocus.dispose();
     _episodesFocus.dispose();
+    for (final node in _episodeFocusNodes.values) {
+      node.dispose();
+    }
     super.dispose();
   }
 
@@ -298,7 +313,36 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
     if (roads.isEmpty) return;
     if (_osdVisible) widget.onHideOsd();
     setState(() {
-        _drawerOpen = true;
+      _drawerOpen = true;
+    });
+    _focusTopmostEpisode();
+  }
+
+  /// 画面里一个焦点框都没有时，先把落脚点放到「离屏幕顶端最近」的那一集。
+  /// 选集是多列网格，空焦点下默认遍历会乱跳，这里按几何位置自己挑。
+  void _focusTopmostEpisode() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_drawerOpen) return;
+      final current = FocusManager.instance.primaryFocus;
+      if (current != null &&
+          current is! FocusScopeNode &&
+          current.context != null) {
+        return; // 已经有焦点框了，不抢
+      }
+      int? best;
+      var bestDy = double.infinity;
+      for (final entry in _episodeKeys.entries) {
+        final box = entry.value.currentContext?.findRenderObject();
+        if (box is! RenderBox || !box.hasSize) continue;
+        final dy = box.localToGlobal(Offset.zero).dy;
+        if (dy < 0) continue; // 已滚出屏幕上方
+        if (dy < bestDy) {
+          bestDy = dy;
+          best = entry.key;
+        }
+      }
+      if (best == null) return;
+      _episodeFocusNodes[best]?.requestFocus();
     });
   }
 
@@ -361,9 +405,7 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                _flashPlaying
-                    ? Icons.play_arrow_rounded
-                    : Icons.pause_rounded,
+                _flashPlaying ? Icons.play_arrow_rounded : Icons.pause_rounded,
                 color: Colors.white,
                 size: 76,
               ),
@@ -476,8 +518,9 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
                     icon: widget.playerController.playback.playing
                         ? Icons.pause_rounded
                         : Icons.play_arrow_rounded,
-                    tooltip:
-                        widget.playerController.playback.playing ? '暂停' : '播放',
+                    tooltip: widget.playerController.playback.playing
+                        ? '暂停'
+                        : '播放',
                     onPressed: () {
                       _flashPlayPause();
                       unawaited(widget.playerController.playOrPause());
@@ -555,60 +598,91 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
               child: Container(color: Colors.black54),
             ),
           ),
-          Container(
-            width: 560,
-            color: const Color(0xF21A1A1A),
-            padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
-            child: SafeArea(
-              left: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.video_library_rounded,
-                          color: Colors.white, size: 26),
-                      const SizedBox(width: 10),
-                      const Text(
-                        '选集',
-                        style: TextStyle(
+          // 这一层只做兜底：焦点落在路由的 FocusScope 上（画面上一个框都没有）
+          // 时，方向键先给选集挑一个落脚点，别让人以为界面卡死。
+          Focus(
+            canRequestFocus: false,
+            skipTraversal: true,
+            onKeyEvent: (node, event) {
+              if (event is! KeyDownEvent) return KeyEventResult.ignored;
+              final key = event.logicalKey;
+              final isArrow =
+                  key == LogicalKeyboardKey.arrowUp ||
+                  key == LogicalKeyboardKey.arrowDown ||
+                  key == LogicalKeyboardKey.arrowLeft ||
+                  key == LogicalKeyboardKey.arrowRight;
+              if (!isArrow) return KeyEventResult.ignored;
+              final current = FocusManager.instance.primaryFocus;
+              if (current == null ||
+                  current is FocusScopeNode ||
+                  current.context == null) {
+                _focusTopmostEpisode();
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: Container(
+              width: 560,
+              color: const Color(0xF21A1A1A),
+              padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
+              child: SafeArea(
+                left: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.video_library_rounded,
                           color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w600,
+                          size: 26,
+                        ),
+                        const SizedBox(width: 10),
+                        const Text(
+                          '选集',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${road.data.length} 集',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: [
+                            for (var i = 1; i <= road.data.length; i++)
+                              _TvEpisodeChip(
+                                key: _episodeKey(i),
+                                focusNode: _episodeFocusNode(i),
+                                index: i,
+                                label: _episodeLabel(road, i),
+                                active: selected.episode == i,
+                                onPressed: () => _selectEpisode(i),
+                              ),
+                          ],
                         ),
                       ),
-                      const Spacer(),
-                      Text(
-                        '${road.data.length} 集',
-                        style: const TextStyle(color: Colors.white70, fontSize: 16),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          for (var i = 1; i <= road.data.length; i++)
-                            _TvEpisodeChip(
-                              index: i,
-                              label: _episodeLabel(road, i),
-                              active: selected.episode == i,
-                              autofocus: selected.episode == i,
-                              onPressed: () => _selectEpisode(i),
-                            ),
-                        ],
-                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'OK 播放 · BACK 关闭',
-                    style: TextStyle(color: Colors.white54, fontSize: 14),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    const Text(
+                      'OK 播放 · BACK 关闭',
+                      style: TextStyle(color: Colors.white54, fontSize: 14),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -743,8 +817,11 @@ class _TvTextButtonState extends State<_TvTextButton> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(widget.icon,
-                  size: 22, color: _focused ? Colors.black : Colors.white),
+              Icon(
+                widget.icon,
+                size: 22,
+                color: _focused ? Colors.black : Colors.white,
+              ),
               const SizedBox(width: 6),
               Text(
                 widget.label,
@@ -853,17 +930,18 @@ class _TvProgressBarState extends State<_TvProgressBar> {
 
 class _TvEpisodeChip extends StatefulWidget {
   const _TvEpisodeChip({
+    super.key,
+    required this.focusNode,
     required this.index,
     required this.label,
     required this.active,
-    required this.autofocus,
     required this.onPressed,
   });
 
+  final FocusNode focusNode;
   final int index;
   final String label;
   final bool active;
-  final bool autofocus;
   final VoidCallback onPressed;
 
   @override
@@ -891,11 +969,11 @@ class _TvEpisodeChipState extends State<_TvEpisodeChip> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       Scrollable.of(context).position.ensureVisible(
-            context.findRenderObject()!,
-            alignment: 0.5,
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
-          );
+        context.findRenderObject()!,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+      );
     });
   }
 
@@ -906,7 +984,7 @@ class _TvEpisodeChipState extends State<_TvEpisodeChip> {
       width: 120,
       height: 64,
       child: Focus(
-        autofocus: widget.autofocus,
+        focusNode: widget.focusNode,
         onKeyEvent: _onKey,
         onFocusChange: _onFocusChange,
         child: GestureDetector(
@@ -915,28 +993,40 @@ class _TvEpisodeChipState extends State<_TvEpisodeChip> {
             duration: const Duration(milliseconds: 120),
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: highlight
-                  ? Colors.white
-                  : (widget.active
-                      ? Colors.orange.withValues(alpha: 0.85)
-                      : Colors.white10),
+              // 选中语言统一成「焦点框」：橙色是这套 UI 里没有的颜色，
+              // 留着会让人误以为是另一种状态。
+              color: highlight ? Colors.white : Colors.white10,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: widget.active && !highlight
-                    ? Colors.orange
-                    : Colors.transparent,
+                color: highlight ? Colors.white : Colors.transparent,
                 width: 2,
               ),
             ),
-            child: Text(
-              widget.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: highlight ? Colors.black : Colors.white,
-                fontSize: 17,
-                fontWeight: FontWeight.w500,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.active) ...[
+                  // 当前播放集只做一个小标记，不再整块染色
+                  Icon(
+                    Icons.play_arrow_rounded,
+                    size: 16,
+                    color: highlight ? Colors.black54 : Colors.white70,
+                  ),
+                  const SizedBox(width: 2),
+                ],
+                Flexible(
+                  child: Text(
+                    widget.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: highlight ? Colors.black : Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
