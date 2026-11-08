@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_modular/flutter_modular.dart';
+
+import 'package:kazumi/utils/app_mode.dart';
 
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
@@ -168,6 +171,81 @@ class _SettingsPageState extends State<SettingsPage> {
   Object? _categoryNavigation;
   late String _location = _normalizePath(widget.location);
 
+  /// 左侧一级菜单的焦点节点。右侧内容跑在 RouterOutlet（嵌套 Navigator）里，
+  /// 有自己的 FocusScope，方向键遍历出不了那个 scope，所以需要在这里手动接一下。
+  final Map<String, FocusNode> _railFocusNodes = {};
+
+  /// 上一次在右侧内容里的焦点，从一级菜单按右键时还回去。
+  FocusNode? _lastPaneFocus;
+
+  FocusNode _railFocusNode(String path) => _railFocusNodes.putIfAbsent(
+    path,
+    () => FocusNode(debugLabel: 'settings-rail-$path'),
+  );
+
+  @override
+  void dispose() {
+    for (final node in _railFocusNodes.values) {
+      node.dispose();
+    }
+    super.dispose();
+  }
+
+  /// 把焦点送回右侧内容。切了分类之后旧的焦点节点会被销毁，所以退一步
+  /// 找嵌套路由自己的 FocusScope，再往里走一格。
+  void _focusIntoPane() {
+    final last = _lastPaneFocus;
+    if (last != null && last.context != null && last.canRequestFocus) {
+      last.requestFocus();
+      return;
+    }
+    // 换过分类之后旧节点已销毁：从 RouterOutlet 往下取一个元素，借它所在的
+    // FocusScope —— 那是嵌套路由自己的 scope，从里面挑第一个可聚焦控件落位。
+    final outletContext = _outletKey.currentContext;
+    if (outletContext is! Element) return;
+    Element? probe;
+    outletContext.visitChildren((element) {
+      probe ??= element;
+    });
+    final probeElement = probe;
+    if (probeElement == null) return;
+    final scope = FocusScope.of(probeElement);
+    for (final node in scope.traversalDescendants) {
+      if (node.context != null) {
+        node.requestFocus();
+        return;
+      }
+    }
+    scope.requestFocus();
+  }
+
+  /// 电视形态下补一条「右侧内容 ←→ 左侧一级菜单」的通路。
+  /// 只在设置页内部生效，不动全局按键映射。
+  KeyEventResult _handleFocusKeys(FocusNode node, KeyEvent event) {
+    if (!AppMode.isTv || event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    final primary = FocusManager.instance.primaryFocus;
+    if (primary == null) return KeyEventResult.ignored;
+    final inRail = _railFocusNodes.containsValue(primary);
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft && !inRail) {
+      // 右侧内容里还能往左走就照常走；走不动说明到边界了，交给一级菜单。
+      if (primary.focusInDirection(TraversalDirection.left)) {
+        return KeyEventResult.handled;
+      }
+      _lastPaneFocus = primary;
+      _railFocusNode(_selectedCategoryPath).requestFocus();
+      return KeyEventResult.handled;
+    }
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight && inRail) {
+      _focusIntoPane();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   String get _selectedCategoryPath => _categoryPath(_location);
   bool get _isSecondaryRoute =>
       _location != '/settings' && _location != _selectedCategoryPath;
@@ -184,12 +262,11 @@ class _SettingsPageState extends State<SettingsPage> {
   void _replaceCategory(String path) {
     final outlet = _outletKey.currentState!;
     // Nested pushes leave _location unchanged, so check the stack as well.
-    if (!outlet.canPop &&
-        !_isSecondaryRoute &&
-        _selectedCategoryPath == path) {
+    if (!outlet.canPop && !_isSecondaryRoute && _selectedCategoryPath == path) {
       return;
     }
     _categoryNavigation = null;
+    _lastPaneFocus = null; // 旧内容会被销毁，别指着已废弃的节点
     outlet.navigate(path);
     setState(() => _location = path);
   }
@@ -220,59 +297,68 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final wide = constraints.maxWidth > LayoutBreakpoint.compact['width']!;
-      return NavigatorPopHandler<Object?>(
-        onPopWithResult: (_) => _goBack(),
-        child: Scaffold(
-          appBar: wide
-              ? SysAppBar(
-                  title: const Text('设置'),
-                  leading: BackButton(onPressed: _exitSettings),
-                )
-              : null,
-          body: SafeArea(
-            top: false,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Keep the outlet at the same tree position on resize.
-                SizedBox(
-                  width: wide ? 280 : 0,
-                  child: Offstage(
-                    offstage: !wide,
-                    child: _SettingsMenu(
-                      wide: true,
-                      selectedPath: _selectedCategoryPath,
-                      onSelect: _replaceCategory,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: SettingsPaneScope(
-                    embedded: wide,
-                    showBackButton: _isSecondaryRoute,
-                    onBack: _goBack,
-                    child: NotificationListener<_SettingsCategorySelected>(
-                      onNotification: (notification) {
-                        _pushCategory(notification.path);
-                        return true;
-                      },
-                      child: Theme(
-                        data: Theme.of(context).copyWith(
-                          pageTransitionsTheme: settingsPageTransitionsTheme,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth > LayoutBreakpoint.compact['width']!;
+        return NavigatorPopHandler<Object?>(
+          onPopWithResult: (_) => _goBack(),
+          child: Scaffold(
+            appBar: wide
+                ? SysAppBar(
+                    title: const Text('设置'),
+                    leading: BackButton(onPressed: _exitSettings),
+                  )
+                : null,
+            body: SafeArea(
+              top: false,
+              child: Focus(
+                canRequestFocus: false,
+                skipTraversal: true,
+                onKeyEvent: _handleFocusKeys,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Keep the outlet at the same tree position on resize.
+                    SizedBox(
+                      width: wide ? 280 : 0,
+                      child: Offstage(
+                        offstage: !wide,
+                        child: _SettingsMenu(
+                          wide: true,
+                          selectedPath: _selectedCategoryPath,
+                          onSelect: _replaceCategory,
+                          focusNodeFor: _railFocusNode,
                         ),
-                        child: RouterOutlet(key: _outletKey),
                       ),
                     ),
-                  ),
+                    Expanded(
+                      child: SettingsPaneScope(
+                        embedded: wide,
+                        showBackButton: _isSecondaryRoute,
+                        onBack: _goBack,
+                        child: NotificationListener<_SettingsCategorySelected>(
+                          onNotification: (notification) {
+                            _pushCategory(notification.path);
+                            return true;
+                          },
+                          child: Theme(
+                            data: Theme.of(context).copyWith(
+                              pageTransitionsTheme:
+                                  settingsPageTransitionsTheme,
+                            ),
+                            child: RouterOutlet(key: _outletKey),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
 }
 
@@ -287,9 +373,11 @@ class SettingsIndexPage extends StatelessWidget {
     return Scaffold(
       appBar: SysAppBar(
         title: const Text('设置'),
-        leading: BackButton(onPressed: () {
-          if (!context.maybePop()) context.navigate('/tab/my');
-        }),
+        leading: BackButton(
+          onPressed: () {
+            if (!context.maybePop()) context.navigate('/tab/my');
+          },
+        ),
       ),
       body: _SettingsMenu(
         wide: false,
@@ -304,11 +392,15 @@ class _SettingsMenu extends StatelessWidget {
     required this.wide,
     this.selectedPath,
     required this.onSelect,
+    this.focusNodeFor,
   });
 
   final bool wide;
   final String? selectedPath;
   final ValueChanged<String> onSelect;
+
+  /// 电视形态下由外层托管焦点节点（需要跨 RouterOutlet 的 scope 跳转）。
+  final FocusNode Function(String path)? focusNodeFor;
 
   @override
   Widget build(BuildContext context) {
@@ -329,6 +421,7 @@ class _SettingsMenu extends StatelessWidget {
                 _RailDestination(
                   category: category,
                   selected: selectedPath == category.path,
+                  focusNode: focusNodeFor?.call(category.path),
                   onTap: () => onSelect(category.path),
                 ),
             ] else
@@ -358,11 +451,13 @@ class _RailDestination extends StatelessWidget {
     required this.category,
     required this.selected,
     required this.onTap,
+    this.focusNode,
   });
 
   final _SettingsCategory category;
   final bool selected;
   final VoidCallback onTap;
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -378,6 +473,7 @@ class _RailDestination extends StatelessWidget {
         borderRadius: BorderRadius.circular(28),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
+          focusNode: focusNode,
           onTap: onTap,
           child: SizedBox(
             height: 56,
