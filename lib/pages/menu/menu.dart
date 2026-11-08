@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:flutter/services.dart';
@@ -28,7 +30,8 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
       FocusNode(debugLabel: 'tv-top-bar', skipTraversal: true, canRequestFocus: false);
 
   /// 电视形态：当前选中 tab 那颗胶囊的焦点节点，UP 到顶时把焦点交给它。
-  final GlobalKey<TvTopBarState> _topBarKey = GlobalKey<TvTopBarState>();
+  final FocusNode _tvNavFocus = FocusNode(debugLabel: 'tv-nav-selected');
+  Timer? _focusWatchdog;
 
   /// 电视形态：最后一次落在内容区的焦点节点，从导航条按 DOWN 时回到这里。
   FocusNode? _lastContentFocus;
@@ -58,16 +61,28 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   void initState() {
     super.initState();
     if (AppMode.isTv) {
-      // 路由自带的 FocusScope 会先抢到初始焦点，导航条上的 autofocus 抢不过它，
-      // 结果就是「进了主界面却没有任何一个控件被选中」。这里在首帧后显式把焦点按到当前 tab。
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _topBarKey.currentState?.focusSelected();
+      // 路由自带的 FocusScope 会先抢到初始焦点，只靠 autofocus 抢不过它，
+      // 结果就是「进了主界面却没有任何一个控件被选中」，方向键全死。
+      // 这里在首帧后把焦点按到当前 tab，并在随后几拍里复查——路由转场结束得比
+      // 第一帧晚，一次设置会被后面拿走的焦点盖掉。
+      WidgetsBinding.instance.addPostFrameCallback((_) => _assertBarFocus());
+      // 看门狗：只要焦点整个丢掉（primaryFocus 为空、或只是个 FocusScope），
+      // 就把它抓回导航条。遥控器没有鼠标可以「点一下」找回焦点，
+      // 少了这一层，一次抢焦点就可能让整个界面再也按不动。
+      _focusWatchdog = Timer.periodic(const Duration(milliseconds: 600), (_) {
+        if (!mounted || _isCovered) return;
+        final primary = FocusManager.instance.primaryFocus;
+        if (primary == null || primary is FocusScopeNode) {
+          _assertBarFocus();
+        }
       });
     }
   }
 
   @override
   void dispose() {
+    _focusWatchdog?.cancel();
+    _tvNavFocus.dispose();
     _tvBarAnchor.dispose();
 
     rootRouteObserver.unsubscribe(this);
@@ -82,25 +97,49 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   bool _isInTopBar(FocusNode? node) {
     if (node == null) return false;
     if (identical(node, _tvBarAnchor)) return true;
-    if (_topBarKey.currentState?.owns(node) ?? false) return true;
+    if (identical(node, _tvNavFocus)) return true;
     return node.ancestors.contains(_tvBarAnchor);
   }
 
   /// 把焦点送回导航条当前 tab 的胶囊。
   void _focusTopBar() {
-    _topBarKey.currentState?.focusSelected();
+    if (_tvNavFocus.context != null) _tvNavFocus.requestFocus();
+  }
+
+  /// 确认焦点真的落在导航条上，没落上就重试几拍。
+  ///
+  /// 路由转场、页面重建都会把焦点临时交给 FocusScope，一次性 requestFocus 很容易
+  /// 被之后的焦点变化抹掉，表现出来就是「整个界面按不动」。
+  void _assertBarFocus([int attempt = 0]) {
+    if (!mounted || attempt > 25) return;
+    if (_tvNavFocus.context == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _assertBarFocus(attempt + 1);
+      });
+      return;
+    }
+    if (_tvNavFocus.hasPrimaryFocus) return;
+    _tvNavFocus.requestFocus();
+    Future<void>.delayed(const Duration(milliseconds: 200), () {
+      if (!mounted) return;
+      if (!_tvNavFocus.hasPrimaryFocus) _assertBarFocus(attempt + 1);
+    });
   }
 
   /// 节点还能不能用：既要有挂载的 element、可聚焦，还要真的落在屏幕可见范围里。
   /// 只判断 context 不够——切 tab 或返回上一页后，旧节点可能仍挂在树上，
   /// 但位置在可视区之外，焦点按过去就「看不见、也走不动」。
   bool _isFocusableAndVisible(FocusNode node) {
+    if (node is FocusScopeNode) return false;
     if (node.context == null || !node.canRequestFocus) return false;
     final rect = node.rect;
     if (rect.height <= 0 || rect.width <= 0) return false;
-    final size = MediaQuery.of(context).size;
+    // 用 root view 的逻辑尺寸：节点 rect 是全局坐标，MediaQuery 里的 size 已经被
+    // 电视形态的缩放改写过，两者不是同一个坐标系。
+    final view = View.of(context);
+    final viewport = view.physicalSize / view.devicePixelRatio;
     if (rect.bottom <= _tvBarAnchor.rect.bottom) return false;
-    if (rect.top >= size.height || rect.right <= 0 || rect.left >= size.width) {
+    if (rect.top >= viewport.height || rect.right <= 0 || rect.left >= viewport.width) {
       return false;
     }
     return true;
@@ -122,37 +161,64 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     final anchor = _tvBarAnchor.rect;
     if (anchor.isEmpty) return false;
     final double barBottom = anchor.bottom;
-    final primary = FocusManager.instance.primaryFocus;
-    final double wantX = primary?.rect.center.dx ?? anchor.center.dx;
+    final view = View.of(context);
+    final viewport = view.physicalSize / view.devicePixelRatio;
+    // 从导航条下来一律落在最上一行最左边那一格：电视上的通行做法，
+    // 也是人眼从导航往下的第一落点；贴着胶囊横坐标算反而容易跳到行中间。
 
+    // 注意：FocusScopeNode 也是 canRequestFocus 的，而且整块内容区就是一条 scope，
+    // 它的矩形正好盖在整个页面上、top 也刚好在导航条下面。一旦把它当落脚点，
+    // 焦点就交给了一个「没有画面」的容器：requestFocus 成功、界面毫无变化，
+    // 再按下键又落回它身上——这就是「下键按了没反应」的真凶。
     final candidates = <FocusNode>[];
+    FocusScopeNode? scopeBelow;
     for (final node in FocusManager.instance.rootScope.traversalDescendants) {
       if (_isInTopBar(node)) continue;
-      if (!node.canRequestFocus) continue;
       final rect = node.rect;
       if (rect.height <= 0 || rect.width <= 0) continue;
       if (rect.top < barBottom - 1) continue;
+      if (rect.top >= viewport.height) continue;
+      if (node is FocusScopeNode) {
+        if (scopeBelow == null || rect.top < scopeBelow.rect.top) {
+          scopeBelow = node;
+        }
+        continue;
+      }
+      if (!node.canRequestFocus) continue;
       candidates.add(node);
     }
-    if (candidates.isEmpty) return false;
-    candidates.sort((a, b) {
-      final ra = a.rect;
-      final rb = b.rect;
-      final rowA = (ra.top / 8).round();
-      final rowB = (rb.top / 8).round();
-      if (rowA != rowB) return rowA.compareTo(rowB);
-      return (ra.center.dx - wantX).abs().compareTo((rb.center.dx - wantX).abs());
-    });
-    final target = candidates.first;
-    target.requestFocus();
-    return true;
+    if (candidates.isNotEmpty) {
+      candidates.sort((a, b) {
+        final ra = a.rect;
+        final rb = b.rect;
+        final rowA = (ra.top / 8).round();
+        final rowB = (rb.top / 8).round();
+        if (rowA != rowB) return rowA.compareTo(rowB);
+        return ra.left.compareTo(rb.left);
+      });
+      candidates.first.requestFocus();
+      return true;
+    }
+    // 兜底：整页一个可聚焦控件都没有（还在加载、或者是空状态页）时，
+    // 让路由自己的 scope 做一次标准的方向遍历。
+    if (scopeBelow != null) {
+      scopeBelow.requestFocus();
+      if (scopeBelow.focusInDirection(TraversalDirection.down)) return true;
+    }
+    return false;
   }
 
   @override
   void didPushNext() => _setCovered(true);
 
   @override
-  void didPopNext() => _setCovered(false);
+  void didPopNext() {
+    _setCovered(false);
+    // 从二级页返回时路由会重置焦点，回来第一件事就是把焦点交还导航条。
+    if (AppMode.isTv) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _assertBarFocus());
+    }
+  }
 
   void _setCovered(bool value) {
     if (!mounted || _isCovered == value) {
@@ -175,7 +241,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     outlet.navigate('/tab${menu.getPath(index)}/');
     setState(() => _selectedIndex = index);
     // 换 tab 后焦点要跟着落到新的胶囊上，否则数字键切完 tab 焦点还留在旧格。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _focusTopBar());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _assertBarFocus());
   }
 
   void _handleSystemBack(BuildContext context) {
@@ -376,7 +442,11 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
               LogicalKeyboardKey.arrowLeft,
               LogicalKeyboardKey.arrowRight,
             }.contains(event.logicalKey)) {
+              // 一个控件都没被选中时不能干等：先送回导航条，导航条也拿不到再
+              // 找内容区第一个可聚焦控件，保证任何一个方向键都能把界面「唤醒」。
               _focusTopBar();
+              _assertBarFocus();
+              if (!_tvNavFocus.hasPrimaryFocus) _focusContent();
               return KeyEventResult.handled;
             }
             return KeyEventResult.ignored;
@@ -403,9 +473,13 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
               bottom: false,
               child: Focus(
                 focusNode: _tvBarAnchor,
+                // 兜底：哪怕胶囊还没挂上，也要先把焦点留在本壳内，
+                // 否则焦点停在上层的 FocusScope 上，按键根本进不到这里，
+                // 整个界面就像死机一样。
+                autofocus: AppMode.isTv,
                 child: TvTopBar(
-                  key: _topBarKey,
                   selectedIndex: selectedIndex,
+                  navFocusNode: _tvNavFocus,
                   onSelect: _selectDestination,
                   onSearch: () => context.pushNamed('/search/'),
                   onHistory: () => context.pushNamed('/settings/history/'),

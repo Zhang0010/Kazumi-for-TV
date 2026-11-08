@@ -13,13 +13,14 @@ import 'package:kazumi/utils/constants.dart';
 /// 竖排 rail 会让「先往左跳、再往下找」的移动距离变长，也不符合大部分 TV 应用。
 /// 顺带把当前 tab 自己的筛选入口（推荐页的「热门番组」）收进同一条，
 /// 进页面后只有一个横向焦点带，方向键横着走即可。
-class TvTopBar extends StatefulWidget {
+class TvTopBar extends StatelessWidget {
   const TvTopBar({
     super.key,
     required this.selectedIndex,
     required this.onSelect,
     required this.onSearch,
     required this.onHistory,
+    this.navFocusNode,
   });
 
   final int selectedIndex;
@@ -27,52 +28,18 @@ class TvTopBar extends StatefulWidget {
   final VoidCallback onSearch;
   final VoidCallback onHistory;
 
-  static const destinations = <_TvNavItem>[
+  /// 选中 tab 那颗胶囊使用的焦点节点，由外层持有。
+  ///
+  /// 外层需要靠「是不是这个节点」来判断焦点在不在导航条里；用节点身份判断，
+  /// 不去查祖先链——换 tab 时这个节点会被挂到另一颗胶囊上，祖先链会失效。
+  final FocusNode? navFocusNode;
+
+  static const _destinations = <_TvNavItem>[
     _TvNavItem('推荐', Icons.home_rounded, Icons.home_outlined),
     _TvNavItem('时间表', Icons.timeline_rounded, Icons.timeline_outlined),
     _TvNavItem('追番', Icons.favorite_rounded, Icons.favorite_border),
     _TvNavItem('我的', Icons.settings_rounded, Icons.settings_outlined),
   ];
-
-  @override
-  State<TvTopBar> createState() => TvTopBarState();
-}
-
-/// 导航条对外暴露的焦点能力。
-///
-/// 焦点节点必须**每个胶囊一个、且终生不换**：之前是「选中的那格用外层传进来的
-/// 同一个节点」，换 tab 时这个节点会被重新挂到另一颗胶囊上，节点的祖先链当场失效，
-/// 外层再判断「焦点在不在导航条里」就会得到错误答案，下键于是彻底失效。
-class TvTopBarState extends State<TvTopBar> {
-  late final List<FocusNode> _navNodes = List<FocusNode>.generate(
-    TvTopBar.destinations.length,
-    (i) => FocusNode(debugLabel: 'tv-nav-pill-$i'),
-  );
-  final FocusNode _searchNode = FocusNode(debugLabel: 'tv-nav-search');
-  final FocusNode _historyNode = FocusNode(debugLabel: 'tv-nav-history');
-
-  FocusNode get selectedNode => _navNodes[widget.selectedIndex];
-
-  /// 该节点是否属于导航条。
-  bool owns(FocusNode? node) {
-    if (node == null) return false;
-    if (node == _searchNode || node == _historyNode) return true;
-    return _navNodes.contains(node);
-  }
-
-  void focusSelected() {
-    if (mounted) selectedNode.requestFocus();
-  }
-
-  @override
-  void dispose() {
-    for (final node in _navNodes) {
-      node.dispose();
-    }
-    _searchNode.dispose();
-    _historyNode.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -85,21 +52,21 @@ class TvTopBarState extends State<TvTopBar> {
           _TvIconPill(
             icon: Icons.search_rounded,
             tooltip: '搜索',
-            focusNode: _searchNode,
-            onTap: widget.onSearch,
+            onTap: onSearch,
           ),
           const SizedBox(width: 16),
-          for (var i = 0; i < TvTopBar.destinations.length; i++) ...[
+          for (var i = 0; i < _destinations.length; i++) ...[
             if (i > 0) const SizedBox(width: 8),
             _TvNavPill(
-              item: TvTopBar.destinations[i],
-              selected: i == widget.selectedIndex,
-              focusNode: _navNodes[i],
-              onTap: () => widget.onSelect(i),
+              item: _destinations[i],
+              selected: i == selectedIndex,
+              autofocus: i == selectedIndex,
+              focusNode: i == selectedIndex ? navFocusNode : null,
+              onTap: () => onSelect(i),
             ),
           ],
           // 推荐页的「热门番组」筛选，和导航放在同一条上
-          if (widget.selectedIndex == 0) ...[
+          if (selectedIndex == 0) ...[
             const SizedBox(width: 16),
             Container(
               width: 1,
@@ -113,8 +80,7 @@ class TvTopBarState extends State<TvTopBar> {
           _TvIconPill(
             icon: Icons.history_rounded,
             tooltip: '历史记录',
-            focusNode: _historyNode,
-            onTap: widget.onHistory,
+            onTap: onHistory,
           ),
         ],
       ),
@@ -130,22 +96,40 @@ class _TvNavItem {
   final IconData icon;
 }
 
-class _TvNavPill extends StatelessWidget {
+class _TvNavPill extends StatefulWidget {
   const _TvNavPill({
     required this.item,
     required this.selected,
-    required this.focusNode,
+    required this.autofocus,
     required this.onTap,
+    this.focusNode,
   });
 
   final _TvNavItem item;
   final bool selected;
-  final FocusNode focusNode;
+  final bool autofocus;
   final VoidCallback onTap;
+  final FocusNode? focusNode;
+
+  @override
+  State<_TvNavPill> createState() => _TvNavPillState();
+}
+
+class _TvNavPillState extends State<_TvNavPill> {
+  final FocusNode _ownNode = FocusNode(debugLabel: 'tv-nav-pill');
+
+  FocusNode get _node => widget.focusNode ?? _ownNode;
+
+  @override
+  void dispose() {
+    _ownNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final selected = widget.selected;
     final foreground =
         selected ? colors.onPrimaryContainer : colors.onSurfaceVariant;
     return TvFocusRing(
@@ -155,22 +139,23 @@ class _TvNavPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          focusNode: focusNode,
+          focusNode: _node,
+          autofocus: widget.autofocus,
           borderRadius: BorderRadius.circular(22),
-          onTap: onTap,
+          onTap: widget.onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  selected ? item.selectedIcon : item.icon,
+                  selected ? widget.item.selectedIcon : widget.item.icon,
                   size: 20,
                   color: foreground,
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  item.label,
+                  widget.item.label,
                   style: TextStyle(
                     fontSize: 16,
                     color: foreground,
@@ -190,13 +175,11 @@ class _TvIconPill extends StatelessWidget {
   const _TvIconPill({
     required this.icon,
     required this.tooltip,
-    required this.focusNode,
     required this.onTap,
   });
 
   final IconData icon;
   final String tooltip;
-  final FocusNode focusNode;
   final VoidCallback onTap;
 
   @override
@@ -209,7 +192,6 @@ class _TvIconPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          focusNode: focusNode,
           borderRadius: BorderRadius.circular(22),
           onTap: onTap,
           child: Padding(
