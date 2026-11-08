@@ -5,6 +5,7 @@ import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/embedded_native_control_area.dart';
 import 'package:kazumi/navigation.dart';
 import 'package:kazumi/pages/menu/route_visibility.dart';
+import 'package:kazumi/pages/menu/tv_top_bar.dart';
 import 'package:kazumi/pages/router.dart';
 import 'package:kazumi/utils/app_mode.dart';
 
@@ -174,6 +175,10 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
       topLeft: Radius.circular(16),
       bottomLeft: Radius.circular(16),
     );
+    const topBarRadius = BorderRadius.only(
+      topLeft: Radius.circular(16),
+      topRight: Radius.circular(16),
+    );
     final Widget rail = EmbeddedNativeControlArea(
       child: NavigationRail(
               backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
@@ -245,10 +250,20 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
           }
           return KeyEventResult.ignored;
         },
-        child: Row(
+        child: Column(
           children: [
-            rail,
-            Expanded(child: _outlet(context, borderRadius: borderRadius)),
+            SafeArea(
+              bottom: false,
+              child: TvTopBar(
+                selectedIndex: selectedIndex,
+                onSelect: _selectDestination,
+                onSearch: () => context.pushNamed('/search/'),
+                onHistory: () => context.pushNamed('/settings/history/'),
+              ),
+            ),
+            Expanded(
+              child: _outlet(context, borderRadius: topBarRadius),
+            ),
           ],
         ),
       ),

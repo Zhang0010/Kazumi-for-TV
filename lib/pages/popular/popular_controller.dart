@@ -69,6 +69,20 @@ abstract class _PopularController with Store {
   }
 
   @action
+  Future<void> selectTag(String tag) async {
+    if (tag == currentTag) return;
+    setCurrentTag(tag);
+    if (tag.isEmpty) {
+      clearBangumiList();
+      if (trendList.isEmpty) {
+        await queryBangumiByTrend();
+      }
+    } else {
+      await queryBangumiByTag(type: 'init');
+    }
+  }
+
+  @action
   Future<void> queryBangumiByTag({String type = 'add'}) async {
     if (type == 'init') {
       bangumiList.clear();

@@ -13,6 +13,7 @@ import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/platform/desktop_window_config.dart';
 import 'package:kazumi/bean/appbar/drag_to_move_bar.dart' as dtb;
 import 'package:kazumi/utils/device.dart';
+import 'package:kazumi/utils/app_mode.dart';
 
 class PopularPage extends StatefulWidget {
   const PopularPage({
@@ -70,7 +71,9 @@ class _PopularPageState extends State<PopularPage> {
       body: CustomScrollView(
         controller: scrollController,
         slivers: [
-          buildSliverAppBar(),
+          // 电视形态下标题与「热门番组」筛选都收进了顶部导航条，
+          // 这里不再重复一层 120px 的展开标题。
+          if (!AppMode.isTv) buildSliverAppBar(),
           SliverToBoxAdapter(
             child: Observer(
               builder: (_) => AnimatedOpacity(
@@ -262,14 +265,6 @@ class _PopularPageState extends State<PopularPage> {
     if (!mounted || selected == popularController.currentTag) return;
     scrollController.animateTo(0,
         duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
-    popularController.setCurrentTag(selected);
-    if (selected.isEmpty) {
-      popularController.clearBangumiList();
-      if (popularController.trendList.isEmpty) {
-        await popularController.queryBangumiByTrend();
-      }
-    } else {
-      await popularController.queryBangumiByTag(type: 'init');
-    }
+    await popularController.selectTag(selected);
   }
 }
