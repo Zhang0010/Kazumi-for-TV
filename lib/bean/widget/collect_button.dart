@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
-import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
+import 'package:kazumi/bean/widget/tv_action_dialog.dart';
 import 'package:kazumi/bean/widget/tv_focus_ring.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
@@ -67,29 +67,10 @@ class _CollectButtonState extends State<CollectButton> {
   /// 电视形态：用的是弹窗选择，不是贴边菜单。Markup 菜单在遥控器上点不动
   /// （菜单项挂在 Overlay 上、没有可聚焦的落点），改成和设置页一样的列表弹窗。
   Future<void> _showTvPicker(BuildContext context) async {
-    final current = CollectType.fromValue(
-      _collectController.getCollectType(widget.bangumiItem),
-    );
-    final picked = await KazumiDialog.show<CollectType>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('追番状态'),
-        children: [
-          for (final type in CollectType.values)
-            TvFocusRing(
-              borderRadius: 16,
-              child: ListTile(
-                autofocus: type == current,
-                leading: Icon(
-                  type == current
-                      ? Icons.check_circle_rounded
-                      : Icons.circle_outlined,
-                ),
-                title: Text(_labelFor(type)),
-                onTap: () => Navigator.of(context).pop(type),
-              ),
-            ),
-        ],
+    final picked = await showCollectTypePicker(
+      context,
+      current: CollectType.fromValue(
+        _collectController.getCollectType(widget.bangumiItem),
       ),
     );
     if (picked != null) {

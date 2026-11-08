@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
+import 'package:kazumi/bean/widget/tv_focus_ring.dart';
 import 'package:kazumi/modules/history/history_module.dart';
 import 'package:kazumi/pages/history/history_list_query.dart';
+import 'package:kazumi/utils/app_mode.dart';
 
 class HistoryListView extends StatefulWidget {
   const HistoryListView({
@@ -15,7 +18,12 @@ class HistoryListView extends StatefulWidget {
 
   final List<History> entries;
   final bool editing;
-  final Widget Function(History history, BorderRadius borderRadius) itemBuilder;
+  final Widget Function(
+    History history,
+    BorderRadius borderRadius, {
+    bool autofocus,
+  })
+  itemBuilder;
 
   @override
   State<HistoryListView> createState() => _HistoryListViewState();
@@ -59,8 +67,11 @@ class _HistoryListViewState extends State<HistoryListView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final groups =
-        groupHistoryEntries(widget.entries, query: _query, source: _source);
+    final groups = groupHistoryEntries(
+      widget.entries,
+      query: _query,
+      source: _source,
+    );
     // Separate sliver delegates eagerly lay out the first card of every date.
     final rows = <_HistoryListRow>[
       for (final group in groups) ...[
@@ -72,8 +83,10 @@ class _HistoryListViewState extends State<HistoryListView> {
     final rowIndices = <Key, int>{
       for (var index = 0; index < rows.length; index++) rows[index].key: index,
     };
-    final count =
-        groups.fold<int>(0, (total, group) => total + group.entries.length);
+    final count = groups.fold<int>(
+      0,
+      (total, group) => total + group.entries.length,
+    );
     final filtered =
         _query.trim().isNotEmpty || _source != HistorySourceFilter.all;
     final now = DateTime.now();
@@ -81,6 +94,10 @@ class _HistoryListViewState extends State<HistoryListView> {
       borderRadius: BorderRadius.all(Radius.circular(28)),
       borderSide: BorderSide.none,
     );
+
+    if (AppMode.isTv) {
+      return _buildTv(context, groups, filtered: filtered, count: count);
+    }
 
     return CallbackShortcuts(
       bindings: {
@@ -95,105 +112,387 @@ class _HistoryListViewState extends State<HistoryListView> {
       },
       child: Focus(
         autofocus: true,
-        child: LayoutBuilder(builder: (context, constraints) {
-          final contentWidth = constraints.maxWidth.clamp(0.0, 960.0);
-          // Preserve full-width scrolling while centering the content.
-          final inset = (constraints.maxWidth - contentWidth) / 2 +
-              (constraints.maxWidth < 600 ? 16.0 : 24.0);
-          return Scrollbar(
-            controller: _scrollController,
-            child: CustomScrollView(
-              key: const PageStorageKey('history-list'),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final contentWidth = constraints.maxWidth.clamp(0.0, 960.0);
+            // Preserve full-width scrolling while centering the content.
+            final inset =
+                (constraints.maxWidth - contentWidth) / 2 +
+                (constraints.maxWidth < 600 ? 16.0 : 24.0);
+            return Scrollbar(
               controller: _scrollController,
-              scrollBehavior:
-                  ScrollConfiguration.of(context).copyWith(scrollbars: false),
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              slivers: [
-                if (widget.entries.isNotEmpty || filtered)
-                  SliverPadding(
-                    padding: EdgeInsets.fromLTRB(inset, 16, inset, 0),
-                    sliver: SliverToBoxAdapter(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          TextField(
-                            controller: _searchController,
-                            focusNode: _searchFocus,
-                            textInputAction: TextInputAction.search,
-                            decoration: InputDecoration(
-                              hintText: '搜索番剧、别名或来源',
-                              prefixIcon: const Icon(Icons.search_rounded),
-                              suffixIcon: _query.isEmpty
-                                  ? null
-                                  : IconButton(
-                                      tooltip: '清除搜索',
-                                      onPressed: _clearSearch,
-                                      icon: const Icon(Icons.close_rounded),
-                                    ),
-                              filled: true,
-                              fillColor: colors.surfaceContainerHigh,
-                              constraints: const BoxConstraints(minHeight: 56),
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 16),
-                              border: searchBorder,
-                              enabledBorder: searchBorder,
-                              focusedBorder: searchBorder.copyWith(
-                                borderSide:
-                                    BorderSide(color: colors.primary, width: 2),
+              child: CustomScrollView(
+                key: const PageStorageKey('history-list'),
+                controller: _scrollController,
+                scrollBehavior: ScrollConfiguration.of(
+                  context,
+                ).copyWith(scrollbars: false),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                slivers: [
+                  if (widget.entries.isNotEmpty || filtered)
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(inset, 16, inset, 0),
+                      sliver: SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TextField(
+                              controller: _searchController,
+                              focusNode: _searchFocus,
+                              textInputAction: TextInputAction.search,
+                              decoration: InputDecoration(
+                                hintText: '搜索番剧、别名或来源',
+                                prefixIcon: const Icon(Icons.search_rounded),
+                                suffixIcon: _query.isEmpty
+                                    ? null
+                                    : IconButton(
+                                        tooltip: '清除搜索',
+                                        onPressed: _clearSearch,
+                                        icon: const Icon(Icons.close_rounded),
+                                      ),
+                                filled: true,
+                                fillColor: colors.surfaceContainerHigh,
+                                constraints: const BoxConstraints(
+                                  minHeight: 56,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 16,
+                                ),
+                                border: searchBorder,
+                                enabledBorder: searchBorder,
+                                focusedBorder: searchBorder.copyWith(
+                                  borderSide: BorderSide(
+                                    color: colors.primary,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                              onChanged: (value) =>
+                                  _updateFilters(() => _query = value),
+                              onSubmitted: (_) => _searchFocus.unfocus(),
+                            ),
+                            const SizedBox(height: 16),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                for (final source in HistorySourceFilter.values)
+                                  _filter(source),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                            Semantics(
+                              liveRegion: true,
+                              child: Text(
+                                widget.editing
+                                    ? '共 $count 条记录 · 点按删除按钮移除'
+                                    : filtered
+                                    ? '找到 $count 条记录 · 最近观看优先'
+                                    : '共 $count 条记录 · 最近观看优先',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                ),
                               ),
                             ),
-                            onChanged: (value) =>
-                                _updateFilters(() => _query = value),
-                            onSubmitted: (_) => _searchFocus.unfocus(),
-                          ),
-                          const SizedBox(height: 16),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              for (final source in HistorySourceFilter.values)
-                                _filter(source),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          Semantics(
-                            liveRegion: true,
-                            child: Text(
-                              widget.editing
-                                  ? '共 $count 条记录 · 点按删除按钮移除'
-                                  : filtered
-                                      ? '找到 $count 条记录 · 最近观看优先'
-                                      : '共 $count 条记录 · 最近观看优先',
-                              style: theme.textTheme.bodyMedium
-                                  ?.copyWith(color: colors.onSurfaceVariant),
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                if (groups.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _emptyState(filtered),
-                  )
-                else
-                  SliverPadding(
-                    padding: EdgeInsets.fromLTRB(inset, 0, inset,
-                        24 + MediaQuery.paddingOf(context).bottom),
-                    sliver: SliverList.builder(
-                      itemCount: rows.length,
-                      findChildIndexCallback: (key) => rowIndices[key],
-                      itemBuilder: (context, index) =>
-                          _buildRow(context, rows[index], now),
+                  if (groups.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _emptyState(filtered),
+                    )
+                  else
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(
+                        inset,
+                        0,
+                        inset,
+                        24 + MediaQuery.paddingOf(context).bottom,
+                      ),
+                      sliver: SliverList.builder(
+                        itemCount: rows.length,
+                        findChildIndexCallback: (key) => rowIndices[key],
+                        itemBuilder: (context, index) =>
+                            _buildRow(context, rows[index], now),
+                      ),
                     ),
-                  ),
-              ],
-            ),
-          );
-        }),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 电视形态
+  // ---------------------------------------------------------------------------
+
+  /// 电视版布局：顶部一条筛选栏（全部/在线/缓存 + 搜索），下面按日期分组的
+  /// 海报网格。手机版那套「一整行横条 + 右侧小按钮」在电视上一屏只放三条，
+  /// 还得横跨整屏去够按钮，这里换成一眼能扫完的网格。
+  Widget _buildTv(
+    BuildContext context,
+    List<HistoryDateGroup> groups, {
+    required bool filtered,
+    required int count,
+  }) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final now = DateTime.now();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final contentWidth = constraints.maxWidth.clamp(0.0, 1600.0);
+        final inset = (constraints.maxWidth - contentWidth) / 2 + 32;
+        const spacing = 16.0;
+        // 和「推荐」页一样按 6 列铺，卡片尺寸对得上，别看起来像缩水版
+        const minWidth = 220.0;
+        final columns = ((contentWidth + spacing) / (minWidth + spacing))
+            .floor()
+            .clamp(2, 8);
+        final width = (contentWidth - spacing * (columns - 1)) / columns;
+        // 海报 2:3 + 底部两行文字
+        final extent = width / 0.65 + 56;
+        return CustomScrollView(
+          controller: _scrollController,
+          scrollBehavior: ScrollConfiguration.of(
+            context,
+          ).copyWith(scrollbars: false),
+          slivers: [
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(inset, 12, inset, 10),
+              sliver: SliverToBoxAdapter(
+                child: Row(
+                  children: [
+                    for (final source in HistorySourceFilter.values) ...[
+                      _tvFilter(source),
+                      const SizedBox(width: 8),
+                    ],
+                    const SizedBox(width: 8),
+                    Text(
+                      filtered ? '找到 $count 条' : '共 $count 条',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Text(
+                      'OK 续播 · 菜单键 更多',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                    const Spacer(),
+                    _tvSearchButton(context),
+                  ],
+                ),
+              ),
+            ),
+            if (groups.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _emptyState(filtered),
+              )
+            else
+              for (
+                var groupIndex = 0;
+                groupIndex < groups.length;
+                groupIndex++
+              ) ...[
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    inset + 4,
+                    groupIndex == 0 ? 6 : 18,
+                    inset + 4,
+                    10,
+                  ),
+                  sliver: SliverToBoxAdapter(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(
+                          groups[groupIndex].label(now),
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${groups[groupIndex].entries.length} 条',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                SliverPadding(
+                  padding: EdgeInsets.symmetric(horizontal: inset),
+                  sliver: SliverGrid.builder(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      crossAxisSpacing: spacing,
+                      mainAxisSpacing: spacing,
+                      mainAxisExtent: extent,
+                    ),
+                    itemCount: groups[groupIndex].entries.length,
+                    itemBuilder: (context, index) => widget.itemBuilder(
+                      groups[groupIndex].entries[index],
+                      const BorderRadius.all(Radius.circular(14)),
+                      autofocus: groupIndex == 0 && index == 0,
+                    ),
+                  ),
+                ),
+              ],
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 24 + MediaQuery.paddingOf(context).bottom,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _tvFilter(HistorySourceFilter source) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final selected = _source == source;
+    final shape = BorderRadius.circular(20);
+    return TvFocusRing(
+      borderRadius: 20,
+      child: Material(
+        color: selected
+            ? colors.secondaryContainer
+            : colors.surfaceContainerLow,
+        borderRadius: shape,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _updateFilters(() => _source = source),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (selected) ...[
+                  Icon(
+                    Icons.check_rounded,
+                    size: 18,
+                    color: colors.onSecondaryContainer,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Text(
+                  source.label,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: selected
+                        ? colors.onSecondaryContainer
+                        : colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tvSearchButton(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final active = _query.trim().isNotEmpty;
+    return TvFocusRing(
+      borderRadius: 20,
+      child: Material(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(20),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: _openSearchDialog,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.search_rounded, size: 20),
+                const SizedBox(width: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 220),
+                  child: Text(
+                    active ? _query : '搜索',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: active ? colors.primary : colors.onSurfaceVariant,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                ),
+                if (active) ...[
+                  const SizedBox(width: 6),
+                  InkWell(
+                    onTap: _clearSearch,
+                    child: const Icon(Icons.close_rounded, size: 18),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 遥控器上打字是次要需求，搜索收进弹窗：不占一整行、也不用担心焦点
+  /// 被输入框吃掉（输入框里的方向键是文本编辑语义）。
+  Future<void> _openSearchDialog() async {
+    final controller = TextEditingController(text: _query);
+    final result = await KazumiDialog.show<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('搜索历史记录'),
+        content: SizedBox(
+          width: 560,
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            textInputAction: TextInputAction.search,
+            decoration: const InputDecoration(
+              hintText: '番剧名、别名或来源',
+              prefixIcon: Icon(Icons.search_rounded),
+            ),
+            onSubmitted: (value) => Navigator.of(context).pop(value),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(null),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(''),
+            child: const Text('清空'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('搜索'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (!mounted || result == null) return;
+    _updateFilters(() => _query = result);
   }
 
   Widget _buildRow(BuildContext context, _HistoryListRow row, DateTime now) {
@@ -209,13 +508,19 @@ class _HistoryListViewState extends State<HistoryListView> {
           child: Row(
             children: [
               Expanded(
-                child: Text(group.label(now),
-                    style: theme.textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w700)),
+                child: Text(
+                  group.label(now),
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
-              Text('${group.entries.length} 条',
-                  style: theme.textTheme.labelLarge
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+              Text(
+                '${group.entries.length} 条',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
             ],
           ),
         ),
@@ -246,8 +551,9 @@ class _HistoryListViewState extends State<HistoryListView> {
             : const Duration(milliseconds: 250),
         curve: Curves.easeInOutCubicEmphasized,
         decoration: BoxDecoration(
-          color:
-              selected ? colors.secondaryContainer : colors.surfaceContainerLow,
+          color: selected
+              ? colors.secondaryContainer
+              : colors.surfaceContainerLow,
           borderRadius: shape,
         ),
         child: Material(
@@ -259,24 +565,32 @@ class _HistoryListViewState extends State<HistoryListView> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 48),
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (selected) ...[
-                      Icon(Icons.check_rounded,
-                          size: 18, color: colors.onSecondaryContainer),
+                      Icon(
+                        Icons.check_rounded,
+                        size: 18,
+                        color: colors.onSecondaryContainer,
+                      ),
                       const SizedBox(width: 8),
                     ],
-                    Text(source.label,
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight:
-                              selected ? FontWeight.w700 : FontWeight.w500,
-                          color: selected
-                              ? colors.onSecondaryContainer
-                              : colors.onSurfaceVariant,
-                        )),
+                    Text(
+                      source.label,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        color: selected
+                            ? colors.onSecondaryContainer
+                            : colors.onSurfaceVariant,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -293,10 +607,7 @@ class _HistoryListViewState extends State<HistoryListView> {
       title: filtered ? '没有找到相关记录' : '还没有观看记录',
       actions: [
         if (filtered)
-          StateActionButton.tonal(
-            onPressed: _resetFilters,
-            text: '查看全部记录',
-          ),
+          StateActionButton.tonal(onPressed: _resetFilters, text: '查看全部记录'),
       ],
     );
   }

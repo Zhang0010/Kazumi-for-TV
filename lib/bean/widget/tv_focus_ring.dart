@@ -81,12 +81,10 @@ class _TvFocusRingState extends State<TvFocusRing> {
                   child: IgnorePointer(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        borderRadius:
-                            BorderRadius.circular(widget.borderRadius),
-                        border: Border.all(
-                          color: widget.borderColor,
-                          width: 5,
+                        borderRadius: BorderRadius.circular(
+                          widget.borderRadius,
                         ),
+                        border: Border.all(color: widget.borderColor, width: 5),
                         boxShadow: [
                           // 外发光，让白框在浅色背景上也能跳出来
                           BoxShadow(
@@ -122,8 +120,9 @@ class _TvFocusRingState extends State<TvFocusRing> {
                   child: IgnorePointer(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        borderRadius:
-                            BorderRadius.circular(widget.borderRadius),
+                        borderRadius: BorderRadius.circular(
+                          widget.borderRadius,
+                        ),
                         color: widget.borderColor.withValues(alpha: 0.06),
                       ),
                     ),
