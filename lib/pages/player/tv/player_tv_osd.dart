@@ -64,8 +64,6 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
   final FocusNode _backFocus = FocusNode(debugLabel: 'tv-back');
   final FocusNode _episodesFocus = FocusNode(debugLabel: 'tv-episodes');
 
-  Timer? _okLongPressTimer;
-  bool _okLongPressFired = false;
 
   Timer? _hudTimer;
   String? _hudText;
@@ -99,7 +97,6 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
   @override
   void dispose() {
     FocusManager.instance.removeEarlyKeyEventHandler(_handleKeyEvent);
-    _okLongPressTimer?.cancel();
     _hudTimer?.cancel();
     _playPauseFlashTimer?.cancel();
     _playPauseFocus.dispose();
@@ -158,31 +155,18 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
 
     if (_isOk(key)) {
       if (visible) return KeyEventResult.ignored;
-      if (event is KeyDownEvent) {
-        _okLongPressFired = false;
-        _okLongPressTimer?.cancel();
-        _okLongPressTimer = Timer(const Duration(milliseconds: 550), () {
-          _okLongPressFired = true;
-          _openDrawer();
-        });
-        return KeyEventResult.handled;
-      }
+      // 无 OSD 时 OK = 播放/暂停。长按选集已经去掉：选集走底部「剧集」按钮。
       if (event is KeyUpEvent) {
-        _okLongPressTimer?.cancel();
-        _okLongPressTimer = null;
-        if (!_okLongPressFired) {
-          _flashPlayPause();
-          unawaited(widget.playerController.playOrPause());
-        }
-        _okLongPressFired = false;
-        return KeyEventResult.handled;
+        _flashPlayPause();
+        unawaited(widget.playerController.playOrPause());
       }
       return KeyEventResult.handled;
     }
 
     if (_isMenu(key)) {
-      if (event is KeyDownEvent) {
-        _openDrawer();
+      // 菜单键跟下键完全等价：唤出底排播放控件。
+      if (event is KeyDownEvent || event is KeyRepeatEvent) {
+        _showOsd(focusBottom: true);
         return KeyEventResult.handled;
       }
       return KeyEventResult.ignored;
