@@ -11,6 +11,7 @@ import 'package:kazumi/services/network/metered_network_service.dart';
 import 'package:kazumi/services/platform/app_exit.dart';
 import 'package:kazumi/services/platform/tray_service.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:kazumi/bean/widget/tv_focus_overlay.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/dialog/exit_confirmation_dialog.dart';
 import 'package:kazumi/bean/settings/theme_provider.dart';
@@ -343,7 +344,17 @@ class _AppWidgetState extends State<AppWidget>
                         child: SizedBox(
                           width: logicalSize.width,
                           height: logicalSize.height,
-                          child: child,
+                          child: Stack(
+                            children: [
+                              child,
+                              // 全局焦点指示层：包不住框的零散控件（标签 chip、
+                              // 文字按钮、加载更多…）由它统一描边，
+                              // 保证「焦点在哪」在任何页面都看得见。
+                              const Positioned.fill(
+                                child: TvFocusOverlay(),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

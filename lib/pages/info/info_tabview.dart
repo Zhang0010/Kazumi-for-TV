@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:kazumi/utils/app_mode.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
@@ -103,14 +104,19 @@ class _InfoTabViewState extends State<InfoTabView> {
                         width: MediaQuery.sizeOf(context).width > maxWidth
                             ? maxWidth
                             : MediaQuery.sizeOf(context).width - 32,
-                        child: SelectableText(
-                          widget.bangumiItem.summary,
-                          textAlign: TextAlign.start,
-                          scrollBehavior: const ScrollBehavior().copyWith(
-                            scrollbars: false,
+                        // 电视上文本选择没有意义，但 SelectableText 会自建焦点
+                        // 节点抢走方向键，焦点框只好画在一个没有内容的地方。
+                        child: ExcludeFocus(
+                          excluding: AppMode.isTv,
+                          child: SelectableText(
+                            widget.bangumiItem.summary,
+                            textAlign: TextAlign.start,
+                            scrollBehavior: const ScrollBehavior().copyWith(
+                              scrollbars: false,
+                            ),
+                            scrollPhysics: NeverScrollableScrollPhysics(),
+                            selectionHeightStyle: ui.BoxHeightStyle.max,
                           ),
-                          scrollPhysics: NeverScrollableScrollPhysics(),
-                          selectionHeightStyle: ui.BoxHeightStyle.max,
                         ),
                       ),
                       TextButton(
@@ -124,11 +130,14 @@ class _InfoTabViewState extends State<InfoTabView> {
                     ],
                   );
                 } else {
-                  return SelectableText(
-                    widget.bangumiItem.summary,
-                    textAlign: TextAlign.start,
-                    scrollPhysics: NeverScrollableScrollPhysics(),
-                    selectionHeightStyle: ui.BoxHeightStyle.max,
+                  return ExcludeFocus(
+                    excluding: AppMode.isTv,
+                    child: SelectableText(
+                      widget.bangumiItem.summary,
+                      textAlign: TextAlign.start,
+                      scrollPhysics: NeverScrollableScrollPhysics(),
+                      selectionHeightStyle: ui.BoxHeightStyle.max,
+                    ),
                   );
                 }
               }),
