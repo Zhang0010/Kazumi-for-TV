@@ -11,6 +11,7 @@ import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/utils/device.dart';
 import 'package:saver_gallery/saver_gallery.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:kazumi/bean/widget/tv_focus_ring.dart';
 
 class InfoActionsMenu extends StatefulWidget {
   const InfoActionsMenu({super.key, required this.bangumiItem});
@@ -119,10 +120,13 @@ class _InfoActionsMenuState extends State<InfoActionsMenu> {
           label: '外部打开',
         ),
       ],
-      builder: (context, toggle) => IconButton(
-        tooltip: '更多操作',
-        icon: const Icon(Icons.more_horiz_rounded),
-        onPressed: toggle,
+      builder: (context, toggle) => TvFocusRing(
+        borderRadius: 24,
+        child: IconButton(
+          tooltip: '更多操作',
+          icon: const Icon(Icons.more_horiz_rounded),
+          onPressed: toggle,
+        ),
       ),
     );
   }

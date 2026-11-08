@@ -24,6 +24,8 @@ import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/platform/desktop_window_config.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/utils/device.dart';
+import 'package:kazumi/bean/widget/tv_focus_ring.dart';
+import 'package:kazumi/utils/app_mode.dart';
 
 class InfoPage extends StatefulWidget {
   const InfoPage({
@@ -419,6 +421,7 @@ class _InfoPageState extends State<InfoPage>
                                   bangumiItem: infoController.bangumiItem,
                                   isLoading: showBangumiInfoSkeleton,
                                   showRating: showRating,
+                                  onPlay: _startWatching,
                                 ),
                               ),
                             ),
@@ -429,13 +432,21 @@ class _InfoPageState extends State<InfoPage>
                   }),
                 ),
                 forceElevated: innerBoxIsScrolled,
-                bottom: TabBar(
-                  controller: infoTabController,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.center,
-                  dividerHeight: 0,
-                  tabs: _infoTabs.map((name) => Tab(text: name)).toList(),
-                ),
+                bottom: AppMode.isTv
+                    ? PreferredSize(
+                        preferredSize: const Size.fromHeight(60),
+                        child: _TvInfoTabs(
+                          controller: infoTabController,
+                          tabs: _infoTabs,
+                        ),
+                      )
+                    : TabBar(
+                        controller: infoTabController,
+                        isScrollable: true,
+                        tabAlignment: TabAlignment.center,
+                        dividerHeight: 0,
+                        tabs: _infoTabs.map((name) => Text(name)).toList(),
+                      ),
               ),
             ),
           ];
@@ -468,12 +479,16 @@ class _InfoPageState extends State<InfoPage>
           );
         }),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        tooltip: '开始观看',
-        onPressed: _startWatching,
-        label: const Text('开始观看'),
-        icon: const Icon(Icons.play_arrow_rounded),
-      ),
+      // 电视形态不要右下角浮动按钮：遥控器要一格一格挪过去，还挡住内容；
+      // 「开始观看」已经挪到追番按钮旁边了。
+      floatingActionButton: AppMode.isTv
+          ? null
+          : FloatingActionButton.extended(
+              tooltip: '开始观看',
+              onPressed: _startWatching,
+              label: const Text('开始观看'),
+              icon: const Icon(Icons.play_arrow_rounded),
+            ),
     );
   }
 }
@@ -581,6 +596,79 @@ class _InfoHeaderBackground extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// 电视形态的详情页分栏条：概览／吐槽／角色／制作／关联。
+///
+/// 复用时间表星期条的视觉（圆角容器 + primary 高亮 + 白框），
+/// 因为 TabBar 的焦点落点藏在内部 InkWell 上，白框画不进去，
+/// 遥控器选中了也看不出任何变化。
+class _TvInfoTabs extends StatelessWidget {
+  const _TvInfoTabs({required this.controller, required this.tabs});
+
+  final TabController controller;
+  final List<String> tabs;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(28),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: AnimatedBuilder(
+            animation: controller,
+            builder: (context, _) => SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (var i = 0; i < tabs.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: TvFocusRing(
+                        borderRadius: 24,
+                        child: Material(
+                          color: controller.index == i
+                              ? colors.primary
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(24),
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(24),
+                            onTap: () => controller.animateTo(i),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 18, vertical: 10),
+                              child: Text(
+                                tabs[i],
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  color: controller.index == i
+                                      ? colors.onPrimary
+                                      : colors.onSurfaceVariant,
+                                  fontWeight: controller.index == i
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

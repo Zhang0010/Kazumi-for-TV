@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
+import 'package:kazumi/bean/widget/tv_focus_ring.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/pages/collect/collect_controller.dart';
@@ -65,17 +66,22 @@ class _CollectButtonState extends State<CollectButton> {
       onClose: widget.onClose,
       onOpen: widget.onOpen,
       crossAxisUnconstrained: false,
-      builder: (context, toggle) => widget._isExtended
-          ? FilledButton.icon(
-              onPressed: toggle,
-              icon: Icon(_iconFor(collectType)),
-              label: Text(_labelFor(collectType)),
-            )
-          : IconButton(
-              onPressed: toggle,
-              tooltip: _labelFor(collectType),
-              icon: Icon(_iconFor(collectType), color: widget.color),
-            ),
+      // 追番/未追按钮是详情页最常按的东西，电视上必须一眼看出焦点在哪。
+      builder: (context, toggle) => TvFocusRing(
+        borderRadius: widget._isExtended ? 20 : 24,
+        scale: 1.06,
+        child: widget._isExtended
+            ? FilledButton.icon(
+                onPressed: toggle,
+                icon: Icon(_iconFor(collectType)),
+                label: Text(_labelFor(collectType)),
+              )
+            : IconButton(
+                onPressed: toggle,
+                tooltip: _labelFor(collectType),
+                icon: Icon(_iconFor(collectType), color: widget.color),
+              ),
+      ),
       menuChildren: [
         for (final type in CollectType.values)
           KazumiMenuItem(

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:kazumi/bean/widget/collect_button.dart';
+import 'package:kazumi/bean/widget/tv_focus_ring.dart';
+import 'package:kazumi/utils/app_mode.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
@@ -14,11 +16,16 @@ class BangumiInfoCardV extends StatefulWidget {
     required this.bangumiItem,
     required this.isLoading,
     required this.showRating,
+    this.onPlay,
   });
 
   final BangumiItem bangumiItem;
   final bool isLoading;
   final bool showRating;
+
+  /// 电视形态下「开始观看」放在追番按钮旁边（右下角浮动按钮在电视上用遥控器
+  /// 够不着，也不符合电视 app 的操作习惯）。手机/桌面仍用原来的浮动按钮。
+  final VoidCallback? onPlay;
 
   @override
   State<BangumiInfoCardV> createState() => _BangumiInfoCardVState();
@@ -264,12 +271,36 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
                             ),
                           ),
                         ),
-                        SizedBox(
-                          width: 120,
-                          height: 40,
-                          child: CollectButton.extend(
-                            bangumiItem: widget.bangumiItem,
-                          ),
+                        // 追番 + 开始观看并排。加载骨架里也照样占位，
+                        // 数据回来时按钮不会突然从下面冒出来。
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (AppMode.isTv && widget.onPlay != null) ...[
+                              TvFocusRing(
+                                borderRadius: 20,
+                                scale: 1.06,
+                                child: FilledButton.tonalIcon(
+                                  onPressed:
+                                      widget.isLoading ? null : widget.onPlay,
+                                  style: FilledButton.styleFrom(
+                                    minimumSize: const Size(0, 40),
+                                  ),
+                                  icon: const Icon(Icons.play_arrow_rounded,
+                                      size: 20),
+                                  label: const Text('开始观看'),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                            ],
+                            SizedBox(
+                              width: 120,
+                              height: 40,
+                              child: CollectButton.extend(
+                                bangumiItem: widget.bangumiItem,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
