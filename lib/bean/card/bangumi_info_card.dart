@@ -273,33 +273,58 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
                         ),
                         // 追番 + 开始观看并排。加载骨架里也照样占位，
                         // 数据回来时按钮不会突然从下面冒出来。
+                        // 电视上追番和开始观看并排，两个按钮同高、宽度按内容自适应，
+                        // 外面再套一层 scaleDown，系统字号调大时只会缩字不会撑破版式。
+                        // 加载骨架里同样占位，数据回来时按钮不会突然冒出来挤一下。
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (AppMode.isTv && widget.onPlay != null) ...[
                               TvFocusRing(
-                                borderRadius: 20,
+                                borderRadius: 24,
                                 scale: 1.06,
                                 child: FilledButton.tonalIcon(
                                   onPressed:
                                       widget.isLoading ? null : widget.onPlay,
                                   style: FilledButton.styleFrom(
-                                    minimumSize: const Size(0, 40),
+                                    minimumSize: const Size(0, 46),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 22),
                                   ),
                                   icon: const Icon(Icons.play_arrow_rounded,
-                                      size: 20),
+                                      size: 22),
                                   label: const Text('开始观看'),
                                 ),
                               ),
                               const SizedBox(width: 12),
                             ],
-                            SizedBox(
-                              width: 120,
-                              height: 40,
-                              child: CollectButton.extend(
-                                bangumiItem: widget.bangumiItem,
+                            if (AppMode.isTv)
+                              TvFocusRing(
+                                borderRadius: 24,
+                                scale: 1.06,
+                                child: SizedBox(
+                                  width: 168,
+                                  height: 46,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: SizedBox(
+                                      width: 168,
+                                      height: 46,
+                                      child: CollectButton.extend(
+                                        bangumiItem: widget.bangumiItem,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              )
+                            else
+                              SizedBox(
+                                width: 120,
+                                height: 40,
+                                child: CollectButton.extend(
+                                  bangumiItem: widget.bangumiItem,
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ],
