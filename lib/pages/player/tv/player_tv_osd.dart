@@ -453,72 +453,83 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
         ),
         child: SafeArea(
           top: false,
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _TvIconButton(
-                focusNode: _playPauseFocus,
-                icon: widget.playerController.playback.playing
-                    ? Icons.pause_rounded
-                    : Icons.play_arrow_rounded,
-                tooltip: widget.playerController.playback.playing ? '暂停' : '播放',
-                onPressed: () {
-                  _flashPlayPause();
-                  unawaited(widget.playerController.playOrPause());
-                },
-                size: 34,
-              ),
-              _TvIconButton(
-                focusNode: _prevFocus,
-                icon: Icons.skip_previous_rounded,
-                tooltip: '上一集',
-                onPressed: widget.onPreviousEpisode,
-              ),
-              _TvIconButton(
-                focusNode: _nextFocus,
-                icon: Icons.skip_next_rounded,
-                tooltip: '下一集',
-                onPressed: widget.onNextEpisode,
-              ),
-              const SizedBox(width: 12),
-              Expanded(child: _TvProgressBar(
+              // 进度条单独占一行、拉满宽度：原来它夹在按钮中间，
+              // ←→ 走焦点时很容易一步踏进去就变成「跳进度」，
+              // 现在按钮一行、进度条一行，想调进度得先按上键上来。
+              _TvProgressBar(
                 focusNode: _progressFocus,
                 playerController: widget.playerController,
                 onSeekBy: _seek,
-              )),
-              const SizedBox(width: 16),
-              Observer(
-                builder: (_) => Text(
-                  '${durationToString(widget.playerController.playback.currentPosition)}'
-                  ' / ${durationToString(widget.playerController.playback.duration)}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontFeatures: [FontFeature.tabularFigures()],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  _TvIconButton(
+                    focusNode: _playPauseFocus,
+                    icon: widget.playerController.playback.playing
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                    tooltip:
+                        widget.playerController.playback.playing ? '暂停' : '播放',
+                    onPressed: () {
+                      _flashPlayPause();
+                      unawaited(widget.playerController.playOrPause());
+                    },
+                    size: 34,
                   ),
-                ),
-              ),
-              const SizedBox(width: 20),
-              // 常用的三个功能放在底部按钮行末尾：视线不用来回跳，
-              // ←→ 一直走就能到，不用先去碰顶部条。
-              _TvTextButton(
-                focusNode: _episodesFocus,
-                icon: Icons.video_library_rounded,
-                label: '剧集',
-                onPressed: _openDrawer,
-              ),
-              _TvTextButton(
-                focusNode: _danmakuFocus,
-                icon: widget.playerController.danmaku.danmakuOn
-                    ? Icons.subtitles_rounded
-                    : Icons.subtitles_off_rounded,
-                label: widget.playerController.danmaku.danmakuOn ? '弹幕 开' : '弹幕 关',
-                onPressed: widget.onToggleDanmaku,
-              ),
-              _TvTextButton(
-                focusNode: _speedFocus,
-                icon: Icons.speed_rounded,
-                label: '${widget.playerController.playback.playerSpeed}x',
-                onPressed: _openSpeedMenu,
+                  _TvIconButton(
+                    focusNode: _prevFocus,
+                    icon: Icons.skip_previous_rounded,
+                    tooltip: '上一集',
+                    onPressed: widget.onPreviousEpisode,
+                  ),
+                  _TvIconButton(
+                    focusNode: _nextFocus,
+                    icon: Icons.skip_next_rounded,
+                    tooltip: '下一集',
+                    onPressed: widget.onNextEpisode,
+                  ),
+                  const SizedBox(width: 16),
+                  Observer(
+                    builder: (_) => Text(
+                      '${durationToString(widget.playerController.playback.currentPosition)}'
+                      ' / ${durationToString(widget.playerController.playback.duration)}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  // 常用的三个功能放在行尾：←→ 一直走就能到
+                  _TvTextButton(
+                    focusNode: _episodesFocus,
+                    icon: Icons.video_library_rounded,
+                    label: '剧集',
+                    onPressed: _openDrawer,
+                  ),
+                  _TvTextButton(
+                    focusNode: _danmakuFocus,
+                    icon: widget.playerController.danmaku.danmakuOn
+                        ? Icons.subtitles_rounded
+                        : Icons.subtitles_off_rounded,
+                    label: widget.playerController.danmaku.danmakuOn
+                        ? '弹幕 开'
+                        : '弹幕 关',
+                    onPressed: widget.onToggleDanmaku,
+                  ),
+                  _TvTextButton(
+                    focusNode: _speedFocus,
+                    icon: Icons.speed_rounded,
+                    label: '${widget.playerController.playback.playerSpeed}x',
+                    onPressed: _openSpeedMenu,
+                  ),
+                ],
               ),
             ],
           ),
