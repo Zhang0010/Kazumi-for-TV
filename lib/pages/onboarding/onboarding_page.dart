@@ -100,6 +100,12 @@ class _OnboardingPageState extends State<OnboardingPage> {
     if (!AppMode.isTv || event is KeyUpEvent) {
       return KeyEventResult.ignored;
     }
+    // 只接管引导页自己这一层的按键：弹窗（如「暂不添加规则？」）、后续
+    // 页面都有自己的焦点域，这里一律放行，否则会把它们的左右键一起吞掉。
+    final route = ModalRoute.of(context);
+    if (route == null || !route.isCurrent) {
+      return KeyEventResult.ignored;
+    }
     final key = event.logicalKey;
     if (key != LogicalKeyboardKey.arrowRight &&
         key != LogicalKeyboardKey.arrowLeft) {
