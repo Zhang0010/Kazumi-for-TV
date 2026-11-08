@@ -75,14 +75,12 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
   bool _flashVisible = false;
 
   bool _drawerOpen = false;
-  int _drawerRoad = 0;
 
   bool get _osdVisible => widget.playerController.panel.showVideoController;
 
   @override
   void initState() {
     super.initState();
-    _drawerRoad = widget.videoPageController.selectedEpisode.road;
     FocusManager.instance.addEarlyKeyEventHandler(_handleKeyEvent);
   }
 
@@ -137,6 +135,11 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
     if (_drawerOpen) return KeyEventResult.ignored;
     final key = event.logicalKey;
     final visible = _osdVisible;
+    // OSD 开着时按任何键都重置自动隐藏计时：否则走到一半（尤其横跨整行去
+    // 够最右边的剧集/弹幕/倍速）面板自己收了，那几个按钮永远够不到。
+    if (visible && event is KeyDownEvent) {
+      widget.onShowOsd();
+    }
 
     if (_isOk(key)) {
       if (visible) return KeyEventResult.ignored;
@@ -295,8 +298,7 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
     if (roads.isEmpty) return;
     if (_osdVisible) widget.onHideOsd();
     setState(() {
-      _drawerRoad = widget.videoPageController.selectedEpisode.road;
-      _drawerOpen = true;
+        _drawerOpen = true;
     });
   }
 
@@ -308,8 +310,9 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
   }
 
   void _selectEpisode(int episode) {
+    final road = widget.videoPageController.selectedEpisode.road;
     _closeDrawer();
-    widget.onChangeEpisode(episode, _drawerRoad);
+    widget.onChangeEpisode(episode, road);
   }
 
   @override
@@ -493,19 +496,6 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
                     tooltip: '下一集',
                     onPressed: widget.onNextEpisode,
                   ),
-                  const SizedBox(width: 16),
-                  Observer(
-                    builder: (_) => Text(
-                      '${durationToString(widget.playerController.playback.currentPosition)}'
-                      ' / ${durationToString(widget.playerController.playback.duration)}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontFeatures: [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
                   // 常用的三个功能放在行尾：←→ 一直走就能到
                   _TvTextButton(
                     focusNode: _episodesFocus,
@@ -529,6 +519,18 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
                     label: '${widget.playerController.playback.playerSpeed}x',
                     onPressed: _openSpeedMenu,
                   ),
+                  const Spacer(),
+                  Observer(
+                    builder: (_) => Text(
+                      '${durationToString(widget.playerController.playback.currentPosition)}'
+                      ' / ${durationToString(widget.playerController.playback.duration)}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -541,8 +543,9 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
   Widget _buildDrawer(BuildContext context) {
     final roads = widget.videoPageController.roadList;
     if (roads.isEmpty) return const SizedBox.shrink();
-    final road = roads[_drawerRoad.clamp(0, roads.length - 1)];
     final selected = widget.videoPageController.selectedEpisode;
+    // 线路在进播放器前就选好了，这里固定用当前集所在的线路，不再给线路切换栏。
+    final road = roads[selected.road.clamp(0, roads.length - 1)];
     return Positioned.fill(
       child: Row(
         children: [
@@ -582,26 +585,6 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  if (roads.length > 1)
-                    SizedBox(
-                      height: 44,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: roads.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 10),
-                        itemBuilder: (context, index) {
-                          final active = index == _drawerRoad;
-                          return _TvChip(
-                            label: _roadLabel(roads[index], index),
-                            active: active,
-                            onPressed: () {
-                              setState(() => _drawerRoad = index);
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  if (roads.length > 1) const SizedBox(height: 12),
                   Expanded(
                     child: SingleChildScrollView(
                       child: Wrap(
@@ -612,10 +595,8 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
                             _TvEpisodeChip(
                               index: i,
                               label: _episodeLabel(road, i),
-                              active: selected.road == _drawerRoad &&
-                                  selected.episode == i,
-                              autofocus: selected.road == _drawerRoad &&
-                                  selected.episode == i,
+                              active: selected.episode == i,
+                              autofocus: selected.episode == i,
                               onPressed: () => _selectEpisode(i),
                             ),
                         ],
@@ -634,12 +615,6 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
         ],
       ),
     );
-  }
-
-  String _roadLabel(Road road, int index) {
-    final name = road.name.trim();
-    if (name.isEmpty) return '线路 ${index + 1}';
-    return name.length > 10 ? '${name.substring(0, 10)}…' : name;
   }
 
   String _episodeLabel(Road road, int episode) {
@@ -870,64 +845,6 @@ class _TvProgressBarState extends State<_TvProgressBar> {
               ],
             );
           },
-        ),
-      ),
-    );
-  }
-}
-
-class _TvChip extends StatefulWidget {
-  const _TvChip({
-    required this.label,
-    required this.active,
-    required this.onPressed,
-  });
-
-  final String label;
-  final bool active;
-  final VoidCallback onPressed;
-
-  @override
-  State<_TvChip> createState() => _TvChipState();
-}
-
-class _TvChipState extends State<_TvChip> {
-  bool _focused = false;
-
-  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (event is KeyDownEvent &&
-        (event.logicalKey == LogicalKeyboardKey.select ||
-            event.logicalKey == LogicalKeyboardKey.enter ||
-            event.logicalKey == LogicalKeyboardKey.numpadEnter ||
-            event.logicalKey == LogicalKeyboardKey.gameButtonA)) {
-      widget.onPressed();
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final highlight = _focused || widget.active;
-    return Focus(
-      onKeyEvent: _onKey,
-      onFocusChange: (value) => setState(() => _focused = value),
-      child: GestureDetector(
-        onTap: widget.onPressed,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: highlight ? Colors.white : Colors.white12,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            widget.label,
-            style: TextStyle(
-              color: highlight ? Colors.black : Colors.white,
-              fontSize: 16,
-            ),
-          ),
         ),
       ),
     );
