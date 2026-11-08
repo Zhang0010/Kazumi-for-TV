@@ -47,20 +47,24 @@ class _TimelineOptionsButton extends StatelessWidget {
       button: true,
       onTap: onPressed,
       excludeSemantics: true,
-      child: Tooltip(
-        message: '$_timelineOptionsTitle：$summary',
-        child: compact
-            ? FilledButton.tonal(
-                style: style,
-                onPressed: onPressed,
-                child: icon,
-              )
-            : FilledButton.tonalIcon(
-                style: style,
-                onPressed: onPressed,
-                icon: icon,
-                label: Text(sort.label, maxLines: 1),
-              ),
+      child: TvFocusRing(
+        borderRadius: 24,
+        scale: 1.06,
+        child: Tooltip(
+          message: '$_timelineOptionsTitle：$summary',
+          child: compact
+              ? FilledButton.tonal(
+                  style: style,
+                  onPressed: onPressed,
+                  child: icon,
+                )
+              : FilledButton.tonalIcon(
+                  style: style,
+                  onPressed: onPressed,
+                  icon: icon,
+                  label: Text(sort.label, maxLines: 1),
+                ),
+        ),
       ),
     );
   }

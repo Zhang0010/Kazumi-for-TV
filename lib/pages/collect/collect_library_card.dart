@@ -178,12 +178,14 @@ class _CollectPosterCard extends StatelessWidget {
               ),
             );
 
-      return Material(
-        color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(compact ? 16 : 20),
-        clipBehavior: Clip.antiAlias,
-        child: Semantics(
-          button: true,
+      return TvFocusRing(
+        borderRadius: compact ? 16 : 20,
+        child: Material(
+          color: colors.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(compact ? 16 : 20),
+          clipBehavior: Clip.antiAlias,
+          child: Semantics(
+            button: true,
           label: [
             title,
             type.label,
@@ -205,6 +207,7 @@ class _CollectPosterCard extends StatelessWidget {
               ],
             ),
           ),
+        ),
         ),
       );
     });
@@ -238,11 +241,13 @@ class _CollectListTile extends StatelessWidget {
         '${item.ratingScore.toStringAsFixed(1)} 分',
     ];
 
-    return Material(
-      color: colors.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(24),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
+    return TvFocusRing(
+      borderRadius: 24,
+      child: Material(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(24),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
         children: [
           // Isolate menu focus and taps from card navigation.
           Positioned.fill(
@@ -323,6 +328,7 @@ class _CollectListTile extends StatelessWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }

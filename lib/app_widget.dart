@@ -302,18 +302,37 @@ class _AppWidgetState extends State<AppWidget>
             // 电视形态：声明为「非触摸」导航模式，让 InkWell / 按钮显示焦点高亮，
             // 同时把 hover / splash 这类鼠标语义关掉。
             final media = MediaQuery.of(context);
+            // 电视上按 1080p 铺满后整体偏大，缩到 85% 观感更接近常见 TV 应用：
+            // 把布局画布放大 1/0.85 再整体缩放回来，不会出现黑边，也不改 dpr，
+            // 只是逻辑像素变大、元素相对变小。
+            const uiScale = 0.85;
+            final logicalSize = Size(
+              media.size.width / uiScale,
+              media.size.height / uiScale,
+            );
             return Theme(
               data: Theme.of(context).copyWith(
-                focusColor: Colors.white24,
+                focusColor: Colors.white.withValues(alpha: 0.22),
                 hoverColor: Colors.transparent,
-                highlightColor: Colors.white10,
+                highlightColor: Colors.white12,
                 splashFactory: NoSplash.splashFactory,
               ),
               child: MediaQuery(
                 data: media.copyWith(
                   navigationMode: NavigationMode.traditional,
+                  size: logicalSize,
                 ),
-                child: child,
+                child: ClipRect(
+                  child: FittedBox(
+                    fit: BoxFit.fill,
+                    alignment: Alignment.topLeft,
+                    child: SizedBox(
+                      width: logicalSize.width,
+                      height: logicalSize.height,
+                      child: child,
+                    ),
+                  ),
+                ),
               ),
             );
           },

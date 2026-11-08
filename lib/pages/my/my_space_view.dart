@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:kazumi/bean/settings/settings_list.dart';
 import 'package:kazumi/bean/widget/content_section.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
+import 'package:kazumi/bean/widget/tv_focus_ring.dart';
 import 'package:kazumi/modules/my/watch_stats.dart';
 import 'package:material_new_shapes/material_new_shapes.dart';
 
@@ -720,11 +721,13 @@ class _ExpressiveActionState extends State<_ExpressiveAction> {
         : Duration(milliseconds: _pressed ? 150 : 300);
     return Semantics(
       button: true,
-      child: AnimatedScale(
-        scale: _pressed && !reducedMotion ? .97 : 1,
-        duration: duration,
-        curve: _pressed ? Curves.easeOutCubic : Curves.easeOutBack,
-        child: AnimatedContainer(
+      child: TvFocusRing(
+        borderRadius: 28,
+        child: AnimatedScale(
+          scale: _pressed && !reducedMotion ? .97 : 1,
+          duration: duration,
+          curve: _pressed ? Curves.easeOutCubic : Curves.easeOutBack,
+          child: AnimatedContainer(
           duration: duration,
           curve: Curves.easeOutCubic,
           clipBehavior: Clip.antiAlias,
@@ -760,6 +763,7 @@ class _ExpressiveActionState extends State<_ExpressiveAction> {
               ),
             ),
           ),
+        ),
         ),
       ),
     );

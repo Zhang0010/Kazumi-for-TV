@@ -11,6 +11,7 @@ import 'package:kazumi/bean/widget/content_section.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
+import 'package:kazumi/bean/widget/tv_focus_ring.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/pages/timeline/timeline_controller.dart';
 import 'package:kazumi/services/storage/storage.dart';
@@ -309,9 +310,12 @@ class _TimelinePageState extends State<TimelinePage> {
       excludeSemantics: true,
       child: Tooltip(
         message: '切换放送季度',
-        child: InkWell(
-          onTap: loading ? null : () => _showSeasonBottomSheet(context),
-          borderRadius: BorderRadius.circular(20),
+        child: TvFocusRing(
+          borderRadius: 20,
+          scale: 1.04,
+          child: InkWell(
+            onTap: loading ? null : () => _showSeasonBottomSheet(context),
+            borderRadius: BorderRadius.circular(20),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
@@ -338,6 +342,7 @@ class _TimelinePageState extends State<TimelinePage> {
               ],
             ),
           ),
+        ),
         ),
       ),
     );
