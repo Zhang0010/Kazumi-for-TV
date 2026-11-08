@@ -55,6 +55,18 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   }
 
   @override
+  void initState() {
+    super.initState();
+    if (AppMode.isTv) {
+      // 路由自带的 FocusScope 会先抢到初始焦点，导航条上的 autofocus 抢不过它，
+      // 结果就是「进了主界面却没有任何一个控件被选中」。这里在首帧后显式把焦点按到当前 tab。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _tvNavFocus.requestFocus();
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _tvBarAnchor.dispose();
     _tvNavFocus.dispose();
@@ -83,7 +95,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     }
     final double barBottom = _tvBarAnchor.rect.bottom;
     for (final node in FocusManager.instance.rootScope.traversalDescendants) {
-      if (identical(node, _tvBarAnchor) || _isInTopBar(node)) continue;
+      if (_isInTopBar(node)) continue;
       if (!node.canRequestFocus) continue;
       final rect = node.rect;
       if (rect.height <= 0 || rect.width <= 0) continue;
@@ -295,14 +307,36 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
           }
 
           final primary = FocusManager.instance.primaryFocus;
-          final inTopBar = _isInTopBar(primary);
-          if (!inTopBar && primary != null) {
+          final hasWidgetFocus = primary != null &&
+              primary.context != null &&
+              primary is! FocusScopeNode;
+          final inTopBar = hasWidgetFocus && _isInTopBar(primary);
+          if (!inTopBar && hasWidgetFocus) {
             _lastContentFocus = primary;
+          }
+
+          // 焦点停在路由的 FocusScope 上（没有任何控件被选中）时，方向键先找落脚点：
+          // 下键进内容区，其余方向把焦点交给导航条，避免出现「按了没反应」的死状态。
+          if (!hasWidgetFocus) {
+            if (event.logicalKey == LogicalKeyboardKey.arrowDown &&
+                _focusContent()) {
+              return KeyEventResult.handled;
+            }
+            if (<LogicalKeyboardKey>{
+              LogicalKeyboardKey.arrowUp,
+              LogicalKeyboardKey.arrowDown,
+              LogicalKeyboardKey.arrowLeft,
+              LogicalKeyboardKey.arrowRight,
+            }.contains(event.logicalKey)) {
+              _tvNavFocus.requestFocus();
+              return KeyEventResult.handled;
+            }
+            return KeyEventResult.ignored;
           }
 
           // 上键：先在内容区里正常往上走，走到最上面一行还上不去，就把焦点交给导航条。
           if (!inTopBar && event.logicalKey == LogicalKeyboardKey.arrowUp) {
-            final moved = primary?.focusInDirection(TraversalDirection.up) ?? false;
+            final moved = primary.focusInDirection(TraversalDirection.up);
             if (!moved) {
               _tvNavFocus.requestFocus();
             }
