@@ -70,12 +70,16 @@ class _OnboardingPageState extends State<OnboardingPage> {
     super.initState();
     _useGithubUpdate = GStorage.getSetting(SettingsKeys.autoUpdate);
     if (AppMode.isTv) {
+      FocusManager.instance.addEarlyKeyEventHandler(_handleEarlyKey);
       WidgetsBinding.instance.addPostFrameCallback((_) => _focusPrimary());
     }
   }
 
   @override
   void dispose() {
+    if (AppMode.isTv) {
+      FocusManager.instance.removeEarlyKeyEventHandler(_handleEarlyKey);
+    }
     _primaryFocusNode.dispose();
     _pageController.dispose();
     super.dispose();
@@ -87,40 +91,44 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }
 
   /// 电视形态的引导页只有一路「往下走」：右键直接落到主按钮上，
-  /// 不用先盲猜焦点在哪。左键从主按钮退回刚才停留的选项。
-  KeyEventResult _handleNavKey(FocusNode node, KeyEvent event) {
-    if (!AppMode.isTv || event is! KeyDownEvent) {
+  /// 左键从主按钮退回刚才停留的选项。
+  ///
+  /// 必须用「早拦截」：步骤里的 `RadioListTile` 自己绑了方向键（无障碍的
+  /// radio 语义，左右键切换选项），普通 `Focus.onKeyEvent` 挂在祖先上时
+  /// 键已经被它吃掉，表现为「右键在两个选项之间来回跳」。
+  KeyEventResult _handleEarlyKey(KeyEvent event) {
+    if (!AppMode.isTv || event is KeyUpEvent) {
       return KeyEventResult.ignored;
     }
-    final primary = FocusManager.instance.primaryFocus;
-    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-      if (primary != null && !identical(primary, _primaryFocusNode)) {
-        _primaryFocusNode.requestFocus();
-        return KeyEventResult.handled;
-      }
+    final key = event.logicalKey;
+    if (key != LogicalKeyboardKey.arrowRight &&
+        key != LogicalKeyboardKey.arrowLeft) {
+      return KeyEventResult.ignored;
     }
-    if (event.logicalKey == LogicalKeyboardKey.arrowLeft &&
-        identical(primary, _primaryFocusNode)) {
-      final target = _lastContentFocus;
-      if (target != null && target.context != null && target.canRequestFocus) {
-        target.requestFocus();
-      } else {
-        primary?.focusInDirection(TraversalDirection.left);
+    // 按住不放会连发 KeyRepeatEvent：这些也必须一并吞掉，
+    // 否则第一下我们处理了，后面的重复事件又落回 RadioListTile 上。
+    final isDown = event is KeyDownEvent;
+    final primary = FocusManager.instance.primaryFocus;
+    final onPrimary = identical(primary, _primaryFocusNode);
+
+    if (key == LogicalKeyboardKey.arrowRight) {
+      if (isDown && !onPrimary) {
+        if (primary != null && primary is! FocusScopeNode) {
+          _lastContentFocus = primary;
+          _primaryFocusNode.requestFocus();
+        }
       }
       return KeyEventResult.handled;
     }
-    return KeyEventResult.ignored;
-  }
 
-  /// 焦点进入步骤内容区时记一下落点，供左键回退使用。
-  void _rememberContentFocus(bool hasFocus) {
-    if (!hasFocus) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final primary = FocusManager.instance.primaryFocus;
-      if (primary == null || identical(primary, _primaryFocusNode)) return;
-      if (primary is FocusScopeNode) return;
-      _lastContentFocus = primary;
-    });
+    // arrowLeft
+    if (isDown && onPrimary) {
+      final target = _lastContentFocus;
+      if (target != null && target.context != null && target.canRequestFocus) {
+        target.requestFocus();
+      }
+    }
+    return KeyEventResult.handled;
   }
 
   Widget _buildStep(_OnboardingStep step) => switch (step) {
@@ -268,34 +276,26 @@ class _OnboardingPageState extends State<OnboardingPage> {
               padding: EdgeInsets.symmetric(
                 horizontal: MediaQuery.sizeOf(context).width < 600 ? 20 : 32,
               ),
-              // 按键宿主必须同时包住步骤内容和底部按钮：键事件从当前焦点
-              // 往上冒泡，只包内容区的话「继续」按钮上的左键就收不到。
-              child: Focus(
-                canRequestFocus: false,
-                skipTraversal: true,
-                onKeyEvent: _handleNavKey,
-                onFocusChange: _rememberContentFocus,
-                child: Column(
-                  children: [
-                    _OnboardingProgress(
-                      labels: _steps.map((step) => step.label).toList(),
-                      currentIndex: _currentIndex,
+              child: Column(
+                children: [
+                  _OnboardingProgress(
+                    labels: _steps.map((step) => step.label).toList(),
+                    currentIndex: _currentIndex,
+                  ),
+                  Expanded(
+                    child: PageView(
+                      controller: _pageController,
+                      physics: _agreed
+                          ? null
+                          : const NeverScrollableScrollPhysics(),
+                      onPageChanged: (index) {
+                        setState(() => _currentIndex = index);
+                      },
+                      children: _steps.map(_buildStep).toList(),
                     ),
-                    Expanded(
-                      child: PageView(
-                        controller: _pageController,
-                        physics: _agreed
-                            ? null
-                            : const NeverScrollableScrollPhysics(),
-                        onPageChanged: (index) {
-                          setState(() => _currentIndex = index);
-                        },
-                        children: _steps.map(_buildStep).toList(),
-                      ),
-                    ),
-                    _buildBottomBar(context),
-                  ],
-                ),
+                  ),
+                  _buildBottomBar(context),
+                ],
               ),
             ),
           ),
