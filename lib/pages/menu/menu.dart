@@ -30,7 +30,9 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
       FocusNode(debugLabel: 'tv-top-bar', skipTraversal: true, canRequestFocus: false);
 
   /// 电视形态：当前选中 tab 那颗胶囊的焦点节点，UP 到顶时把焦点交给它。
-  final FocusNode _tvNavFocus = FocusNode(debugLabel: 'tv-nav-selected');
+  final FocusNode _tvNavFocus = FocusNode(debugLabel: 'tv-top-nav');
+  /// 挂在电视形态外壳根节点上，用来判断焦点是否还在壳内。
+  final GlobalKey _shellRootKey = GlobalKey(debugLabel: 'tv-menu-shell');
   Timer? _focusWatchdog;
 
   /// 电视形态：最后一次落在内容区的焦点节点，从导航条按 DOWN 时回到这里。
@@ -94,8 +96,24 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   /// 内容区是 RouterOutlet 里的独立路由，各自带 FocusScope；Flutter 的方向
   /// 遍历不跨 scope，所以导航条和内容区之间的上下移动必须由外层显式搭桥，
   /// 否则就会出现「按上键到不了分页栏」。这里先记下焦点归属，再由按键处理搬运。
-  bool _isInTopBar(FocusNode? node) {
-    if (node == null) return false;
+  /// 焦点是否落在本壳（导航条 + 内容区）自己的子树里。
+  bool _isFocusInsideShell() {
+    final focused = FocusManager.instance.primaryFocus?.context;
+    final shell = _shellRootKey.currentContext;
+    if (focused == null || shell == null) return true;
+    if (identical(focused, shell)) return true;
+    var inside = false;
+    (focused as Element).visitAncestorElements((element) {
+      if (identical(element, shell)) {
+        inside = true;
+        return false;
+      }
+      return true;
+    });
+    return inside;
+  }
+
+  bool _isInTopBar(FocusNode node) {
     if (identical(node, _tvBarAnchor)) return true;
     if (identical(node, _tvNavFocus)) return true;
     return node.ancestors.contains(_tvBarAnchor);
@@ -410,6 +428,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     }
 
     return Scaffold(
+      key: _shellRootKey,
       backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
       body: Focus(
         skipTraversal: true,
@@ -420,8 +439,13 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
           // 弹窗 / 底部抽屉（选源、设置面板…）盖在上面时一律不接管：
           // 那些层有自己的焦点域，外壳插手下键会把焦点拽回本页，
           // 表现为「在抽屉里按下键，抽屉直接没了」。
-          final route = ModalRoute.of(context);
-          if (route == null || !route.isCurrent) {
+          //
+          // 判断方式既不能用 `ModalRoute.isCurrent`（嵌套路由下外壳这条路由
+          // 永远不是「当前」，会把正常按键全挡掉），也不能比较路由是否相同
+          // （内容区在 RouterOutlet 里是另一条路由，同样会被挡）。
+          // 可靠判据：焦点控件是不是长在本壳的子树里。抽屉/弹窗挂在 Overlay，
+          // 不在子树内，自然被放行。
+          if (!_isFocusInsideShell()) {
             return KeyEventResult.ignored;
           }
           // 数字键 1-4 直接切 tab（电视惯例，可在设置里关）。
@@ -473,7 +497,10 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
           if (!inTopBar && event.logicalKey == LogicalKeyboardKey.arrowUp) {
             final moved = primary.focusInDirection(TraversalDirection.up);
             if (!moved) {
+              // 内容区第一行再往上没有落脚点：收回导航条（带重试，胶囊
+              // 还没挂上时会失败）。
               _focusTopBar();
+              _assertBarFocus();
             }
             return KeyEventResult.handled;
           }

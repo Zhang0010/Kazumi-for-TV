@@ -104,8 +104,14 @@ class _OnboardingPageState extends State<OnboardingPage> {
     }
     // 只接管引导页自己这一层的按键：弹窗（如「暂不添加规则？」）、后续
     // 页面都有自己的焦点域，这里一律放行，否则会把它们的左右键一起吞掉。
-    final route = ModalRoute.of(context);
-    if (route == null || !route.isCurrent) {
+    // 用「焦点所在路由 ≠ 本页路由」判断，别用 isCurrent —— 嵌套路由下
+    // isCurrent 不可靠。
+    final focusedContext = FocusManager.instance.primaryFocus?.context;
+    final focusedRoute = focusedContext == null
+        ? null
+        : ModalRoute.of(focusedContext);
+    if (focusedRoute != null &&
+        !identical(focusedRoute, ModalRoute.of(context))) {
       return KeyEventResult.ignored;
     }
     final key = event.logicalKey;
