@@ -66,3 +66,27 @@
 3. 首页卡片只包了 `BangumiCardV`；时间表卡片、追番卡片仍靠全局焦点色，没有白框 + 缩放
 4. 设置页列表在 TV 下的焦点可见度尚未逐页核对
 5. `playerController.panel.lockPanel` 在 TV 下没有入口（锁屏后 OSD 不可呼出）
+
+## 四、1.0.1 beta 发版记录
+
+第一个对外版本：版本名 `1.0.1 beta`，`versionName=1.0.1-beta`、`versionCode=20404`
+（大于上游 2.4.3 的 20403，可以直接覆盖安装旧版，不用先卸载）。
+
+构建方式与注意事项：
+
+1. `flutter build apk --release`（**不要加 `--no-pub`**）。
+   加 `--no-pub` 时 Flutter 会复用调试构建生成的 `GeneratedPluginRegistrant.java`，
+   那份里面包含 `dev_dependencies` 的插件（`flutter_native_splash`），release 又没有链接它，
+   于是编译报 `程序包 net.jonhanson.flutter_native_splash 不存在`。
+   反过来，如果把它删掉重建而没重新跑 pub，release 的注册表会是空的 →
+   启动时 `ClassNotFoundException: io.flutter.plugins.GeneratedPluginRegistrant`，
+   表现是**白屏**（`main()` 里 `MediaKit.ensureInitialized` 直接抛错，`runApp` 没执行）。
+2. 发行包不使用 Gradle 的 `signingConfigs.debug`（避免 `build.gradle` 与上游冲突），
+   而是构建后用 `zipalign` + `apksigner` 单独签名：
+   私钥 `android/keys/kazumi-tv-release.jks`，口令在 `android/key.properties`
+   （两者都已进 `.gitignore`，另存了一份在 `~/Documents/kazumi-tv-keys/`）。
+   **这份私钥丢了就再也发不了增量更新**，换签名后老用户必须卸载重装。
+3. 右上角的红色 DEBUG 斜条是 Flutter 的调试横幅，已在 `MaterialApp.router` 上
+   `debugShowCheckedModeBanner: false` 关掉。
+4. 单个 APK 同时支持手机与电视：电视判定在运行时完成（Leanback 特性 / UiMode=TV / 无触摸屏），
+   发行包**不带** `--dart-define=KAZUMI_TV=true`。

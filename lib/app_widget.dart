@@ -286,6 +286,9 @@ class _AppWidgetState extends State<AppWidget>
 
         return MaterialApp.router(
           title: "Kazumi",
+          // 右上角那个红色 DEBUG 斜条是 Flutter 的调试横幅，发行版不希望出现，
+          // 调试时也一并关掉，免得和 TvFocusOverlay 的诊断信息混在一起。
+          debugShowCheckedModeBanner: false,
           localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: const [
             Locale.fromSubtags(

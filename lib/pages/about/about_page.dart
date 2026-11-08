@@ -121,7 +121,9 @@ class _ProjectHeader extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            ApiEndpoints.version,
+            // 版本号在 pubspec 里是 1.0.1-beta（命名要合法），界面上按
+            // 「1.0.1 beta」显示，读起来更像发行版号。
+            ApiEndpoints.version.replaceFirst('-', ' '),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: colors.onSurfaceVariant,
             ),
