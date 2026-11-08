@@ -109,8 +109,10 @@ class _OnboardingPageState extends State<OnboardingPage> {
       return KeyEventResult.ignored;
     }
     final key = event.logicalKey;
-    if (key != LogicalKeyboardKey.arrowRight &&
-        key != LogicalKeyboardKey.arrowLeft) {
+    if (key != LogicalKeyboardKey.arrowLeft &&
+        key != LogicalKeyboardKey.arrowRight &&
+        key != LogicalKeyboardKey.arrowUp &&
+        key != LogicalKeyboardKey.arrowDown) {
       return KeyEventResult.ignored;
     }
     // 按住不放会连发 KeyRepeatEvent：这些也必须一并吞掉，
@@ -139,6 +141,30 @@ class _OnboardingPageState extends State<OnboardingPage> {
         _primaryFocusNode.requestFocus();
       }
       return KeyEventResult.handled;
+    }
+
+    // arrowDown：底部按钮在页面最下方，下面什么都没有，下键应该回到
+    // 上方的选项（例如「访问加速」那三行）。用向上的方向遍历来落点。
+    if (key == LogicalKeyboardKey.arrowDown) {
+      if (!onPrimary && !onSecondary) {
+        // 内容区里的下键交给默认遍历（选项之间移动）
+        return KeyEventResult.ignored;
+      }
+      if (isDown) {
+        primary?.focusInDirection(TraversalDirection.up);
+      }
+      return KeyEventResult.handled;
+    }
+
+    // arrowUp：交给默认遍历；内容区走到顶后落到主按钮，避免卡在顶上
+    if (key == LogicalKeyboardKey.arrowUp) {
+      if (isDown && onContent) {
+        final moved =
+            primary != null && primary.focusInDirection(TraversalDirection.up);
+        if (!moved) _primaryFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
     }
 
     // arrowLeft：内容区 → 左下的次要按钮（第一页是退出，其余是上一步）；

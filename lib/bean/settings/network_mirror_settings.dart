@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
+import 'package:kazumi/bean/widget/tv_focus_ring.dart';
+import 'package:kazumi/utils/app_mode.dart';
 import 'package:kazumi/bean/settings/settings_list.dart';
 import 'package:kazumi/services/network/acceleration_mode.dart';
 import 'package:kazumi/services/network/bangumi_acceleration.dart';
@@ -91,30 +93,61 @@ Future<bool> selectAccelerationMode<T extends AccelerationMode>(
 }) async {
   final selected = await KazumiDialog.show<T>(
     context: context,
-    builder: (context) => SimpleDialog(
-      title: Text(title),
-      children: [
-        RadioGroup<T>(
-          groupValue: current,
-          onChanged: (value) => Navigator.of(context).pop(value),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final mode in modes)
-                RadioListTile<T>(
-                  value: mode,
+    builder: (context) {
+      // 电视形态不用单选组：RadioListTile 自带方向键/单选语义，遥控器上下键
+      // 会被它按「切选项」处理，焦点方向也跟着乱（实测下键往上一格走、
+      // 多按几下弹窗直接没了）。改成普通列表：上下键走焦点，OK 才确认并关闭。
+      if (AppMode.isTv) {
+        return SimpleDialog(
+          title: Text(title),
+          children: [
+            for (final mode in modes)
+              TvFocusRing(
+                borderRadius: 16,
+                child: ListTile(
+                  autofocus: mode == current,
+                  leading: Icon(
+                    mode == current
+                        ? Icons.check_circle_rounded
+                        : Icons.circle_outlined,
+                  ),
                   title: Text(mode.label),
                   subtitle: Text(
                     mode.description,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  onTap: () => Navigator.of(context).pop(mode),
                 ),
-            ],
+              ),
+          ],
+        );
+      }
+      return SimpleDialog(
+        title: Text(title),
+        children: [
+          RadioGroup<T>(
+            groupValue: current,
+            onChanged: (value) => Navigator.of(context).pop(value),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final mode in modes)
+                  RadioListTile<T>(
+                    value: mode,
+                    title: Text(mode.label),
+                    subtitle: Text(
+                      mode.description,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+            ),
           ),
-        ),
-      ],
-    ),
+        ],
+      );
+    },
   );
   if (selected == null || selected == current) return false;
   await GStorage.putSetting(setting, selected.name);

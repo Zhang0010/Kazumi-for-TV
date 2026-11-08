@@ -78,15 +78,32 @@ class _TvFocusOverlayState extends State<TvFocusOverlay> {
     return local & nodeBox.size;
   }
 
-  /// 临时诊断：把焦点节点的类型画在框下方，用来确认「框住了一个空块」到底是哪个控件。
+  /// 临时诊断：把焦点节点的类型、尺寸和它子树里的文字画在框下方。
   String? _debugLabel() {
     final focus = FocusManager.instance.primaryFocus;
     final context = focus?.context;
-    if (context == null) return focus == null ? 'null' : focus.runtimeType.toString();
-    final widget = context.widget;
+    if (context == null) {
+      return focus == null ? 'null' : focus.runtimeType.toString();
+    }
     final box = context.findRenderObject();
-    final size = box is RenderBox && box.hasSize ? '${box.size.width.toStringAsFixed(0)}x${box.size.height.toStringAsFixed(0)}' : '?';
-    return '${focus.runtimeType} / ${widget.runtimeType} / $size';
+    final size = box is RenderBox && box.hasSize
+        ? '${box.size.width.toStringAsFixed(0)}x${box.size.height.toStringAsFixed(0)}'
+        : '?';
+    final texts = <String>[];
+    void collect(Element element) {
+      if (texts.length >= 2) return;
+      final widget = element.widget;
+      if (widget is Text && widget.data != null && widget.data!.isNotEmpty) {
+        texts.add(widget.data!);
+      } else if (widget is RichText) {
+        final plain = widget.text.toPlainText();
+        if (plain.isNotEmpty) texts.add(plain);
+      }
+      element.visitChildren(collect);
+    }
+
+    collect(context as Element);
+    return '${context.widget.runtimeType} $size ${texts.join("/")}';
   }
 
   @override
