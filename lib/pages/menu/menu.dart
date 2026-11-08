@@ -23,6 +23,16 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   late int _selectedIndex = menu.indexForPath(widget.location);
   DateTime? _lastExitPromptAt;
 
+  /// 电视形态：顶部导航条的焦点锚点（本身不可聚焦，只用来判断焦点是否在导航条里）。
+  final FocusNode _tvBarAnchor =
+      FocusNode(debugLabel: 'tv-top-bar', skipTraversal: true, canRequestFocus: false);
+
+  /// 电视形态：当前选中 tab 那颗胶囊的焦点节点，UP 到顶时把焦点交给它。
+  final FocusNode _tvNavFocus = FocusNode(debugLabel: 'tv-nav-selected');
+
+  /// 电视形态：最后一次落在内容区的焦点节点，从导航条按 DOWN 时回到这里。
+  FocusNode? _lastContentFocus;
+
   /// The shell sits at the bottom of the root stack and stays mounted while
   /// other pages cover it, so it publishes that state for its subtree.
   bool _isCovered = false;
@@ -46,8 +56,42 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
 
   @override
   void dispose() {
+    _tvBarAnchor.dispose();
+    _tvNavFocus.dispose();
     rootRouteObserver.unsubscribe(this);
     super.dispose();
+  }
+
+  /// 焦点是否落在顶部导航条里。
+  ///
+  /// 内容区是 RouterOutlet 里的独立路由，各自带 FocusScope；Flutter 的方向
+  /// 遍历不跨 scope，所以导航条和内容区之间的上下移动必须由外层显式搭桥，
+  /// 否则就会出现「按上键到不了分页栏」。这里先记下焦点归属，再由按键处理搬运。
+  bool _isInTopBar(FocusNode? node) {
+    if (node == null) return false;
+    if (identical(node, _tvBarAnchor)) return true;
+    return node.ancestors.contains(_tvBarAnchor);
+  }
+
+  /// 从导航条往下进内容区：优先回到上次停留的控件（跨 scope 的 requestFocus 是允许的），
+  /// 没有历史（比如刚切完 tab）就按遍历顺序找第一个位于导航条下方、可聚焦的节点。
+  bool _focusContent() {
+    final last = _lastContentFocus;
+    if (last != null && last.context != null && last.canRequestFocus) {
+      last.requestFocus();
+      return true;
+    }
+    final double barBottom = _tvBarAnchor.rect.bottom;
+    for (final node in FocusManager.instance.rootScope.traversalDescendants) {
+      if (identical(node, _tvBarAnchor) || _isInTopBar(node)) continue;
+      if (!node.canRequestFocus) continue;
+      final rect = node.rect;
+      if (rect.height <= 0 || rect.width <= 0) continue;
+      if (rect.top < barBottom - 1) continue;
+      node.requestFocus();
+      return true;
+    }
+    return false;
   }
 
   @override
@@ -234,17 +278,40 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
       body: Focus(
         skipTraversal: true,
         onKeyEvent: (node, event) {
+          if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+            return KeyEventResult.ignored;
+          }
           // 数字键 1-4 直接切 tab（电视惯例，可在设置里关）。
-          if (event is KeyDownEvent) {
-            final index = switch (event.logicalKey) {
-              LogicalKeyboardKey.digit1 => 0,
-              LogicalKeyboardKey.digit2 => 1,
-              LogicalKeyboardKey.digit3 => 2,
-              LogicalKeyboardKey.digit4 => 3,
-              _ => null,
-            };
-            if (index != null) {
-              _selectDestination(index);
+          final index = switch (event.logicalKey) {
+            LogicalKeyboardKey.digit1 => 0,
+            LogicalKeyboardKey.digit2 => 1,
+            LogicalKeyboardKey.digit3 => 2,
+            LogicalKeyboardKey.digit4 => 3,
+            _ => null,
+          };
+          if (index != null) {
+            _selectDestination(index);
+            return KeyEventResult.handled;
+          }
+
+          final primary = FocusManager.instance.primaryFocus;
+          final inTopBar = _isInTopBar(primary);
+          if (!inTopBar && primary != null) {
+            _lastContentFocus = primary;
+          }
+
+          // 上键：先在内容区里正常往上走，走到最上面一行还上不去，就把焦点交给导航条。
+          if (!inTopBar && event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            final moved = primary?.focusInDirection(TraversalDirection.up) ?? false;
+            if (!moved) {
+              _tvNavFocus.requestFocus();
+            }
+            return KeyEventResult.handled;
+          }
+
+          // 下键：从导航条回到内容区，回到上次停留的那一格。
+          if (inTopBar && event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            if (_focusContent()) {
               return KeyEventResult.handled;
             }
           }
@@ -254,11 +321,15 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
           children: [
             SafeArea(
               bottom: false,
-              child: TvTopBar(
-                selectedIndex: selectedIndex,
-                onSelect: _selectDestination,
-                onSearch: () => context.pushNamed('/search/'),
-                onHistory: () => context.pushNamed('/settings/history/'),
+              child: Focus(
+                focusNode: _tvBarAnchor,
+                child: TvTopBar(
+                  selectedIndex: selectedIndex,
+                  navFocusNode: _tvNavFocus,
+                  onSelect: _selectDestination,
+                  onSearch: () => context.pushNamed('/search/'),
+                  onHistory: () => context.pushNamed('/settings/history/'),
+                ),
               ),
             ),
             Expanded(

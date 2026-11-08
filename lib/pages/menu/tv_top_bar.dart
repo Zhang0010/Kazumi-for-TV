@@ -20,12 +20,16 @@ class TvTopBar extends StatelessWidget {
     required this.onSelect,
     required this.onSearch,
     required this.onHistory,
+    this.navFocusNode,
   });
 
   final int selectedIndex;
   final ValueChanged<int> onSelect;
   final VoidCallback onSearch;
   final VoidCallback onHistory;
+
+  /// 选中 tab 那颗胶囊使用的焦点节点，由外层持有，方便按上键时把焦点直接送过来。
+  final FocusNode? navFocusNode;
 
   static const _destinations = <_TvNavItem>[
     _TvNavItem('推荐', Icons.home_rounded, Icons.home_outlined),
@@ -54,6 +58,7 @@ class TvTopBar extends StatelessWidget {
               item: _destinations[i],
               selected: i == selectedIndex,
               autofocus: i == selectedIndex,
+              focusNode: i == selectedIndex ? navFocusNode : null,
               onTap: () => onSelect(i),
             ),
           ],
@@ -94,23 +99,27 @@ class _TvNavPill extends StatefulWidget {
     required this.selected,
     required this.autofocus,
     required this.onTap,
+    this.focusNode,
   });
 
   final _TvNavItem item;
   final bool selected;
   final bool autofocus;
   final VoidCallback onTap;
+  final FocusNode? focusNode;
 
   @override
   State<_TvNavPill> createState() => _TvNavPillState();
 }
 
 class _TvNavPillState extends State<_TvNavPill> {
-  late final FocusNode _focusNode = FocusNode(debugLabel: 'tv-nav-pill');
+  final FocusNode _ownNode = FocusNode(debugLabel: 'tv-nav-pill');
+
+  FocusNode get _node => widget.focusNode ?? _ownNode;
 
   @override
   void dispose() {
-    _focusNode.dispose();
+    _ownNode.dispose();
     super.dispose();
   }
 
@@ -127,7 +136,7 @@ class _TvNavPillState extends State<_TvNavPill> {
         borderRadius: BorderRadius.circular(22),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          focusNode: _focusNode,
+          focusNode: _node,
           autofocus: widget.autofocus,
           borderRadius: BorderRadius.circular(22),
           onTap: widget.onTap,
