@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
+import 'package:kazumi/utils/app_mode.dart';
 
 BoxConstraints _adaptiveBottomSheetConstraints(
   BuildContext context, {
@@ -157,7 +158,14 @@ class _MaterialSheetSurfaceState extends State<_MaterialSheetSurface>
                   ),
                 ),
               ),
-              Flexible(child: widget.child),
+              // 电视形态：抽屉一弹出来就把焦点收进抽屉里，
+              // 否则焦点还留在背后的页面上，上下键会在背后的页面里走。
+              Flexible(
+                child: FocusScope(
+                  autofocus: AppMode.isTv,
+                  child: widget.child,
+                ),
+              ),
             ],
           ),
         ),

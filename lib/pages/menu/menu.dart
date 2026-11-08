@@ -417,6 +417,13 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
           if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
             return KeyEventResult.ignored;
           }
+          // 弹窗 / 底部抽屉（选源、设置面板…）盖在上面时一律不接管：
+          // 那些层有自己的焦点域，外壳插手下键会把焦点拽回本页，
+          // 表现为「在抽屉里按下键，抽屉直接没了」。
+          final route = ModalRoute.of(context);
+          if (route == null || !route.isCurrent) {
+            return KeyEventResult.ignored;
+          }
           // 数字键 1-4 直接切 tab（电视惯例，可在设置里关）。
           final index = switch (event.logicalKey) {
             LogicalKeyboardKey.digit1 => 0,
