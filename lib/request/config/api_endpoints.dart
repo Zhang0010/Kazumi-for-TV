@@ -28,15 +28,18 @@ class ApiEndpoints {
       'https://raw.gitcode.com/gh_mirrors/ka/KazumiRules/raw/main/';
 
   /// 在线升级
+  ///
+  /// 指向本仓库自己的 releases，别指向上游 Predidit/Kazumi：本分支版本号是
+  /// 1.x，上游是 2.x，指向上游会让每个用户都被提示「发现新版本 2.4.3」，
+  /// 点下去还会用手机版覆盖掉电视版。
   static const String latestApp =
-      'https://api.github.com/repos/Predidit/Kazumi/releases/latest';
+      'https://api.github.com/repos/Zhang0010/Kazumi-for-TV/releases/latest';
 
   /// Bangumi 镜像测试后端
   static const String bangumiMirrorDomain = 'https://api.kazumi.fyi';
 
-  /// Kazumi 镜像后端应用更新
-  static const String latestAppMirror =
-      '$bangumiMirrorDomain/kazumi/v1/app/latest';
+  /// 应用更新查询端点。
+  static const String latestAppMirror = latestApp;
 
   /// 弹弹官网
   static const String dandanIndex = 'https://www.dandanplay.com/';
