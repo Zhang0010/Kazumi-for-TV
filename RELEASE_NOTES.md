@@ -33,8 +33,9 @@
 ## 安装
 
 - 适用：Android TV、投影仪、电视盒子、以及普通 Android 设备（Android 7.0 及以上，arm64）
-- 下载本页的 `KazumiForTV-1.0.2-beta-arm64-universal.apk`，拷到设备上用文件管理器或 U 盘安装；
-  也可以 `adb install -r -g KazumiForTV-1.0.2-beta-arm64-universal.apk`
+- 下载本页的 `KazumiForTV-1.0.2-beta-arm64.apk`（32 MB），拷到设备上用文件管理器或 U 盘安装；
+  也可以 `adb install -r -g KazumiForTV-1.0.2-beta-arm64.apk`
+- 安装包只含 arm64 原生库；2016 年前后的 32 位老盒子如果装不上，把设备型号发到 Issues，我补一个 armeabi-v7a 包
 - 首次启动需要走 4 步引导（更新源 / 网络加速 / 装一个规则 / 开始使用），装好规则才能搜到番剧
 - 从上游 Kazumi 覆盖安装无需卸载（versionCode 20405 > 上游 20403）；从本仓库旧版本升级直接覆盖
 
@@ -47,7 +48,7 @@
 ## 校验
 
 ```
-SHA-256  557f8f671cebe699e62a1fbcf9815ccdd298ac0a4a5b4dff8b4dd7d294066d52  KazumiForTV-1.0.2-beta-arm64-universal.apk
+SHA-256  183bd907cfd0c76b13e2033ea0c091346906ff7ffba6d8e57a11d9072e9ddbca  KazumiForTV-1.0.2-beta-arm64.apk
 ```
 
 签名证书 SHA-256：`63E6979564B0B57CF0E99432044EFB0C3F0036101E9F8FACF7772B0D8878A057`

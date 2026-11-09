@@ -63,11 +63,13 @@ PW=$(grep storePassword android/key.properties | cut -d= -f2)
 ## 五、产物命名与核对
 
 ```
-KazumiForTV-1.0.2-beta-arm64-universal.apk
+KazumiForTV-1.0.2-beta-arm64.apk
 ```
 
 - 应用显示名：`Kazumi For TV`（`AndroidManifest.xml` 的 `android:label`）
-- 文件名格式：`KazumiForTV-<versionName>-arm64-universal.apk`；将来出 arm32/全 ABI 包再加后缀
+- 文件名格式：`KazumiForTV-<versionName>-<abi>.apk`，只装一个 ABI（`arm64`）→ 32 MB；
+  `universal`（三个 ABI 全带）是 75 MB，只在调试/兼容排查时用，**不要上传**
+- 构建单 ABI：`flutter build apk --release --target-platform android-arm64`
 - 核对：
 
 ```bash
@@ -102,4 +104,4 @@ shasum -a 256 KazumiForTV-1.0.2-beta-arm64-universal.apk
 | 版本 | versionCode | tag | 证书 SHA-256 | APK SHA-256 |
 | --- | --- | --- | --- | --- |
 | 1.0.1 beta | 20404 | `1.0.1-beta` | `63E69795…78A057` | — |
-| 1.0.2 beta | 20405 | `1.0.2-beta` | `63E69795…78A057` | `557f8f671cebe699e62a1fbcf9815ccdd298ac0a4a5b4dff8b4dd7d294066d52` |
+| 1.0.2 beta | 20405 | `1.0.2-beta` | `63E69795…78A057` | `183bd907cfd0c76b13e2033ea0c091346906ff7ffba6d8e57a11d9072e9ddbca`（arm64，32 MB） |
