@@ -33,17 +33,14 @@ class PlatformEnvironmentService {
   }
 
   /// 是否电视类设备（Leanback / UiMode=TELEVISION / 无触摸屏）。
+  ///
+  /// 通道本身失败时**不吞异常**：调用方必须能区分「设备不是电视」和
+  /// 「这次没问出来」（冷启动时插件通道可能还没就绪）。后者如果被当成
+  /// false，电视上就会静默退回手机布局，且要等下次冷启动才恢复。
   static Future<bool> isTvDevice() async {
     if (!Platform.isAndroid) {
       return false;
     }
-    try {
-      return await _intentChannel.invokeMethod<bool>('isTvDevice') ?? false;
-    } on PlatformException catch (e) {
-      KazumiLogger().e("Failed to detect TV device: '${e.message}'.");
-      return false;
-    } on MissingPluginException {
-      return false;
-    }
+    return await _intentChannel.invokeMethod<bool>('isTvDevice') ?? false;
   }
 }

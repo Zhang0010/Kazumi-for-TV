@@ -21,6 +21,7 @@ import 'package:kazumi/utils/app_mode.dart';
 import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/utils/theme.dart';
 import 'package:kazumi/utils/tv_activate.dart';
+import 'package:kazumi/utils/tv_slider_keys.dart';
 
 class AppWidget extends StatefulWidget {
   const AppWidget({super.key});
@@ -42,6 +43,8 @@ class _AppWidgetState extends State<AppWidget>
     trayManager.addListener(this);
     windowManager.addListener(this);
     WidgetsBinding.instance.addObserver(this);
+    // 电视形态：让滑块上的 ↑↓ 走焦而不是调值（否则焦点落到滑块就出不来）。
+    if (AppMode.isTv) TvSliderKeys.install();
     _initializePlatformIntegrations();
   }
 
@@ -78,6 +81,7 @@ class _AppWidgetState extends State<AppWidget>
 
   @override
   void dispose() {
+    TvSliderKeys.uninstall();
     trayManager.removeListener(this);
     windowManager.removeListener(this);
     WidgetsBinding.instance.removeObserver(this);

@@ -267,6 +267,13 @@ class SettingsKeys {
     0,
     group: SettingGroup.interface,
   );
+  /// 上次成功探测到的设备形态：-1 未知 / 0 非电视 / 1 电视。
+  /// 冷启动探测失败时用它兜底，避免电视上被静默降级成手机布局。
+  static const detectedTvDevice = SettingKey<int>(
+    'detectedTvDevice',
+    -1,
+    group: SettingGroup.interface,
+  );
   static const enableGitProxy = SettingKey<bool>(
     _SettingBoxKey.enableGitProxy,
     true,

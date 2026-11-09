@@ -22,7 +22,7 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
   bool _savingCollectLayout = false;
   static const _exitBehaviorTitles = ['退出 Kazumi', '最小化至托盘', '每次都询问'];
   static const _interfaceModeTitles = {
-    0: '自动识别',
+    0: '跟随构建（默认电视）',
     1: '电视（遥控器）',
     2: '手机 / 平板',
   };
@@ -114,7 +114,7 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
                 leading: Icons.tv_rounded,
                 title: const Text('界面模式'),
                 description: const Text(
-                  '自动识别：按系统的电视 / 触摸能力判断\n'
+                  '跟随构建：TV 包默认电视布局，启动时不做设备判定\n'
                   '电视模式：遥控器操作、无触摸手势、无鼠标悬停\n'
                   '修改后需要重启应用生效',
                 ),
@@ -130,6 +130,17 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
                   if (!mounted) return;
                   KazumiDialog.showToast(message: '已保存，重启后生效');
                 },
+              ),
+              // 排查电视 / 手机误判用：把这一次的探测结果摊在明面上。
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Text(
+                  '本次探测：${AppMode.detectionReport}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Theme.of(context).hintColor),
+                ),
               ),
             ]),
           if (isDesktop())

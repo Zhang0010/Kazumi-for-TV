@@ -31,10 +31,6 @@ void main() async {
   registerEchHttpLicenses();
   MediaKit.ensureInitialized();
   if (Platform.isAndroid || Platform.isIOS) {
-    if (Platform.isAndroid) {
-      // 电视形态：先判定，再决定系统栏 / 方向策略。
-      await AppMode.initialize();
-    }
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       systemNavigationBarColor: Colors.transparent,
@@ -44,12 +40,6 @@ void main() async {
   }
 
   if (Platform.isAndroid) {
-    if (AppMode.isTv) {
-      await SystemChrome.setPreferredOrientations(
-        [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight],
-      );
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    }
     await WebViewFeatureService.initialize();
   }
 
@@ -81,6 +71,15 @@ void main() async {
           return const StorageErrorPage();
         }));
     return;
+  }
+  // 形态判定放在存储就绪之后：探测通道失败时要能读上次的结果兜底，
+  // 否则冷启动竞态会让电视静默退回手机布局。
+  await AppMode.initialize();
+  if (Platform.isAndroid && AppMode.isTv) {
+    await SystemChrome.setPreferredOrientations(
+      [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight],
+    );
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
   await DownloadDirectoryService().restoreAccess();
   final showWindowButton = DesktopWindowConfig.showWindowButton;
