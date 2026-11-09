@@ -59,3 +59,7 @@ android/build/reports/problems/
 # 发布签名（本地私钥，绝不入库）
 android/keys/
 android/key.properties
+
+# 构建产物（发版时手动上传 Release 附件，不入库）
+*.apk
+*.idsig

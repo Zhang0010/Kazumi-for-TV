@@ -112,8 +112,8 @@ class _ProjectHeader extends StatelessWidget {
           Semantics(
             header: true,
             child: Text(
-              'Kazumi',
-              style: theme.textTheme.displayMedium?.copyWith(
+              'Kazumi For TV',
+              style: theme.textTheme.displaySmall?.copyWith(
                 color: colors.primary,
                 fontWeight: FontWeight.w600,
               ),

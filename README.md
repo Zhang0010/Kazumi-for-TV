@@ -1,8 +1,14 @@
 <div align=center>
 
-<h1>Kazumi</h1>
+<h1>Kazumi For TV</h1>
 
 <img src="assets/images/logo/logo_rounded.png" width=200></img>
+
+<p><b>在大屏上用遥控器追番。</b>本仓库是 <a href="https://github.com/Predidit/Kazumi">Kazumi</a> 的电视优化分支：
+界面按 10-foot 布局重做，方向键 + OK + 返回就能走完全部功能，不用触屏、不用鼠标。
+下载安装包请到 <a href="https://github.com/Zhang0010/Kazumi-for-TV/releases/latest">Releases</a>。</p>
+
+<h2>基于上游 Kazumi（GPL-3.0）</h2>
 
 <a href="https://t.me/kazumi_app"><img src="https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"></img></a>
 
