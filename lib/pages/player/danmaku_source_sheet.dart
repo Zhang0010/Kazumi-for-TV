@@ -13,12 +13,14 @@ import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/side_panel_transition.dart';
 import 'package:kazumi/bean/widget/split_list_row.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
+import 'package:kazumi/bean/widget/tv_search_field.dart';
 import 'package:kazumi/modules/danmaku/danmaku_episode_response.dart';
 import 'package:kazumi/modules/danmaku/danmaku_search_response.dart';
 import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
 import 'package:kazumi/request/apis/danmaku_api.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
+import 'package:kazumi/utils/app_mode.dart';
 
 const _episodeToolThreshold = 25;
 const _episodeSegmentSize = 100;
@@ -376,10 +378,13 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
                   Expanded(
                     child: ValueListenableBuilder<TextEditingValue>(
                       valueListenable: _keywordController,
-                      builder: (context, value, _) => TextField(
+                      builder: (context, value, _) => TvSearchField(
                         controller: _keywordController,
+                        hint: '番剧名称',
+                        dialogTitle: '搜索番剧',
                         autofocus: true,
-                        textInputAction: TextInputAction.search,
+                        minHeight: 48,
+                        onChanged: (_) {},
                         onSubmitted: (_) => _searchAnime(),
                         decoration: InputDecoration(
                           hintText: '番剧名称',
@@ -709,30 +714,46 @@ class _EpisodeToolbar extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: SizedBox(
-                  height: 46,
-                  child: TextField(
-                    controller: searchController,
-                    onChanged: onSearch,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      hintText: '标题或集号',
-                      prefixIcon: const Icon(Icons.search, size: 18),
-                      suffixIcon: searchController.text.isEmpty
-                          ? null
-                          : IconButton(
-                              tooltip: '清空',
-                              onPressed: () {
-                                searchController.clear();
-                                onSearch('');
-                              },
-                              icon: const Icon(Icons.close, size: 18),
-                            ),
-                    ),
-                  ),
-                ),
+                // 电视形态换成胶囊按钮：输入框里的方向键会被文本编辑吃掉，
+                // 焦点再也走不到下边的集数网格。
+                child: AppMode.isTv
+                    ? SizedBox(
+                        height: 46,
+                        child: TvSearchField(
+                          controller: searchController,
+                          hint: '标题或集号',
+                          dialogTitle: '搜索剧集',
+                          dense: true,
+                          minHeight: 46,
+                          onChanged: onSearch,
+                          onSubmitted: onSearch,
+                        ),
+                      )
+                    : SizedBox(
+                        height: 46,
+                        child: TextField(
+                          controller: searchController,
+                          onChanged: onSearch,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            hintText: '标题或集号',
+                            prefixIcon: const Icon(Icons.search, size: 18),
+                            suffixIcon: searchController.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: '清空',
+                                    onPressed: () {
+                                      searchController.clear();
+                                      onSearch('');
+                                    },
+                                    icon: const Icon(Icons.close, size: 18),
+                                  ),
+                          ),
+                        ),
+                      ),
               ),
-              if (showSegments) ...[
+              // 跳集号输入框在电视上没意义（旁边就有分段，且输入框会吃掉方向键）。
+              if (showSegments && !AppMode.isTv) ...[
                 const SizedBox(width: 8),
                 SizedBox(
                   width: 126,

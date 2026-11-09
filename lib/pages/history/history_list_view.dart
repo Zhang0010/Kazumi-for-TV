@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
+import 'package:kazumi/bean/widget/tv_action_dialog.dart';
 import 'package:kazumi/bean/widget/tv_focus_ring.dart';
 import 'package:kazumi/modules/history/history_module.dart';
 import 'package:kazumi/pages/history/history_list_query.dart';
@@ -456,41 +456,14 @@ class _HistoryListViewState extends State<HistoryListView> {
   /// 遥控器上打字是次要需求，搜索收进弹窗：不占一整行、也不用担心焦点
   /// 被输入框吃掉（输入框里的方向键是文本编辑语义）。
   Future<void> _openSearchDialog() async {
-    final controller = TextEditingController(text: _query);
-    final result = await KazumiDialog.show<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('搜索历史记录'),
-        content: SizedBox(
-          width: 560,
-          child: TextField(
-            controller: controller,
-            autofocus: true,
-            textInputAction: TextInputAction.search,
-            decoration: const InputDecoration(
-              hintText: '番剧名、别名或来源',
-              prefixIcon: Icon(Icons.search_rounded),
-            ),
-            onSubmitted: (value) => Navigator.of(context).pop(value),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(null),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(''),
-            child: const Text('清空'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text),
-            child: const Text('搜索'),
-          ),
-        ],
-      ),
+    // 和别的页面统一走 showTvSearchDialog：输入框只拦上下键，
+    // 弹窗里的「取消 / 清空 / 搜索」遥控器都走得到。
+    final result = await showTvSearchDialog(
+      context,
+      initial: _query,
+      hint: '番剧名、别名或来源',
+      title: '搜索历史记录',
     );
-    controller.dispose();
     if (!mounted || result == null) return;
     _updateFilters(() => _query = result);
   }
