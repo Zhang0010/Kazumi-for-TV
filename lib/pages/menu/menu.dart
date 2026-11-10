@@ -26,11 +26,15 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   DateTime? _lastExitPromptAt;
 
   /// 电视形态：顶部导航条的焦点锚点（本身不可聚焦，只用来判断焦点是否在导航条里）。
-  final FocusNode _tvBarAnchor =
-      FocusNode(debugLabel: 'tv-top-bar', skipTraversal: true, canRequestFocus: false);
+  final FocusNode _tvBarAnchor = FocusNode(
+    debugLabel: 'tv-top-bar',
+    skipTraversal: true,
+    canRequestFocus: false,
+  );
 
   /// 电视形态：当前选中 tab 那颗胶囊的焦点节点，UP 到顶时把焦点交给它。
   final FocusNode _tvNavFocus = FocusNode(debugLabel: 'tv-top-nav');
+
   /// 挂在电视形态外壳根节点上，用来判断焦点是否还在壳内。
   final GlobalKey _shellRootKey = GlobalKey(debugLabel: 'tv-menu-shell');
   Timer? _focusWatchdog;
@@ -76,6 +80,12 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
         final primary = FocusManager.instance.primaryFocus;
         if (primary == null || primary is FocusScopeNode) {
           _assertBarFocus();
+        } else if (_isFocusInsideShell() && _isInvisibleWidgetFocus()) {
+          // 焦点飘到离屏/隐藏控件上：拉回导航条，别让遥控器彻底失效。
+          // 只在焦点确实长在本壳子树里时才动手——弹窗/底部抽屉有自己的
+          // 焦点域，不能被外壳抢走。
+          _dbg('watchdog yank primary=${_describe(primary)}');
+          _assertBarFocus();
         }
       });
     }
@@ -101,6 +111,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     final focused = FocusManager.instance.primaryFocus?.context;
     final shell = _shellRootKey.currentContext;
     if (focused == null || shell == null) return true;
+    if (!focused.mounted) return true;
     if (identical(focused, shell)) return true;
     var inside = false;
     (focused as Element).visitAncestorElements((element) {
@@ -121,7 +132,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
 
   /// 把焦点送回导航条当前 tab 的胶囊。
   void _focusTopBar() {
-    if (_tvNavFocus.context != null) _tvNavFocus.requestFocus();
+    if (_isNodeAlive(_tvNavFocus)) _tvNavFocus.requestFocus();
   }
 
   /// 确认焦点真的落在导航条上，没落上就重试几拍。
@@ -130,7 +141,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   /// 被之后的焦点变化抹掉，表现出来就是「整个界面按不动」。
   void _assertBarFocus([int attempt = 0]) {
     if (!mounted || attempt > 25) return;
-    if (_tvNavFocus.context == null) {
+    if (!_isNodeAlive(_tvNavFocus)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _assertBarFocus(attempt + 1);
       });
@@ -144,12 +155,49 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     });
   }
 
+  /// 节点的 element 是否还活在树上。
+  ///
+  /// 关键坑：`FocusNode.detach()` **不会清空 `context`**，只有
+  /// `FocusNode.attach()` 会写它。所以「context != null」不代表节点还在树上——
+  /// 换分类 / 列表重建之后，旧卡片的节点就处于这个状态。此时读 `rect` 会走到
+  /// `context!.findRenderObject()!`，`!` 命中 null 直接抛异常（release 也抛），
+  /// 而它发生在按键处理的第一行，于是整个下键处理静默中断、
+  /// 表现就是「换了番剧类型后焦点框怎么也下不到番剧列表」。
+  bool _isNodeAlive(FocusNode node) {
+    final ctx = node.context;
+    return ctx != null && ctx.mounted;
+  }
+
+  /// 节点的祖先里有没有把它藏起来的东西（上一页的离屏路由、Offstage、
+  /// Visibility(false)…）。这类节点 `context` 照样在、`rect` 照样有值，
+  /// requestFocus 也会「成功」，但画面上什么都不显示——表现出来就是
+  /// 「按 ↓ 没反应」，因为焦点已经交给了一个看不见的控件。
+  bool _isInVisibleSubtree(FocusNode node) {
+    final ctx = node.context;
+    if (ctx == null || !ctx.mounted) return false;
+    var visible = true;
+    (ctx as Element).visitAncestorElements((element) {
+      final widget = element.widget;
+      if (widget is Offstage && widget.offstage) {
+        visible = false;
+        return false;
+      }
+      if (widget is Visibility && !widget.visible) {
+        visible = false;
+        return false;
+      }
+      return true;
+    });
+    return visible;
+  }
+
   /// 节点还能不能用：既要有挂载的 element、可聚焦，还要真的落在屏幕可见范围里。
   /// 只判断 context 不够——切 tab 或返回上一页后，旧节点可能仍挂在树上，
   /// 但位置在可视区之外，焦点按过去就「看不见、也走不动」。
   bool _isFocusableAndVisible(FocusNode node) {
     if (node is FocusScopeNode) return false;
-    if (node.context == null || !node.canRequestFocus) return false;
+    if (!_isNodeAlive(node) || !node.canRequestFocus) return false;
+    if (!_isInVisibleSubtree(node)) return false;
     final rect = node.rect;
     if (rect.height <= 0 || rect.width <= 0) return false;
     // 用 root view 的逻辑尺寸：节点 rect 是全局坐标，MediaQuery 里的 size 已经被
@@ -161,10 +209,43 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     if (rect.width * rect.height >= viewport.width * viewport.height * 0.4) {
       return false;
     }
-    if (rect.top >= viewport.height || rect.right <= 0 || rect.left >= viewport.width) {
+    if (rect.top >= viewport.height ||
+        rect.right <= 0 ||
+        rect.left >= viewport.width) {
       return false;
     }
     return true;
+  }
+
+  /// 焦点是不是落在了一个「看不见」的控件上。
+  ///
+  /// 电视上最怕这种状态：`primaryFocus` 有值、`hasPrimaryFocus` 也为真，
+  /// 但那个控件要么被 Offstage/离屏路由藏着，要么被滚出了视口、尺寸为 0。
+  /// 表现就是焦点框凭空消失、四个方向键都没反应——后续遍历全在一堆
+  /// 看不见的节点里转圈。
+  bool _isInvisibleWidgetFocus() {
+    final primary = FocusManager.instance.primaryFocus;
+    if (primary == null || !_isNodeAlive(primary)) return false;
+    if (primary is FocusScopeNode) return false;
+    // 导航条自己的胶囊/按钮天然在「导航条下方」这条判据之外，
+    // 不能把它们当成看不见的节点——否则左右键会被自愈逻辑吃掉。
+    if (_isInTopBar(primary)) return false;
+    // 上一页 / Offstage / Visibility(false) 里的节点：context 还在，画面没有。
+    if (!_isInVisibleSubtree(primary)) return true;
+    final rect = primary.rect;
+    if (rect.width <= 0 || rect.height <= 0) return true;
+    final view = View.of(context);
+    final viewport = view.physicalSize / view.devicePixelRatio;
+    // 满屏容器（整页快捷键宿主之类）：能拿到焦点，但画面上没有焦点框。
+    if (rect.width * rect.height >= viewport.width * viewport.height * 0.4) {
+      return true;
+    }
+    // 只判「完全出界」：滚动动画中途卡片会短暂半露在边缘，判严了会和
+    // ensureVisible 打架，焦点反而被抢回导航条。
+    if (rect.top >= viewport.height) return true;
+    if (rect.bottom <= _tvBarAnchor.rect.bottom) return true;
+    if (rect.left >= viewport.width || rect.right <= 0) return true;
+    return false;
   }
 
   /// 从导航条往下进内容区。
@@ -172,13 +253,42 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   /// 之前按遍历顺序取「第一个在导航条下方的节点」，在 1080p 上会挑到列表末尾
   /// 那些还没滚出屏幕、但视觉上在页面底部的小控件，看起来就像「按下键没反应」。
   /// 改成按几何位置挑：取最靠上的一行，同行里取离当前导航胶囊最近的那个。
-  bool _focusContent() {
+  static const bool _kFocusDebug = bool.fromEnvironment('FOCUS_DEBUG');
+
+  void _dbg(String msg) {
+    if (_kFocusDebug) debugPrint('[DBG] $msg');
+  }
+
+  String _describe(FocusNode? n) {
+    if (n == null) return 'null';
+    // 已从树上下来的节点（换分类后旧卡片就是这样）调 rect 会抛异常，
+    // 诊断代码绝不能把被诊断的流程带崩。
+    final ctx = n.context;
+    String rect;
+    try {
+      rect = ctx == null ? 'detached' : '${n.rect}';
+    } catch (e) {
+      rect = 'rect-throws($e)';
+    }
+    return '${n.runtimeType}/${n.debugLabel}/${ctx?.widget.runtimeType}'
+        '/rect=$rect';
+  }
+
+  bool _focusContent({int attempt = 0}) {
     final last = _lastContentFocus;
-    if (last != null && !_isFocusableAndVisible(last)) {
+    _dbg(
+      'focusContent attempt=$attempt last=${_describe(last)} '
+      'visible=${last == null ? '-' : _isFocusableAndVisible(last)}',
+    );
+    if (last != null) {
+      if (_isFocusableAndVisible(last)) {
+        last.requestFocus();
+        // requestFocus 是「标记下一帧的焦点」，不是同步生效：
+        // 这里同步读 hasPrimaryFocus 永远是 false（实测），
+        // 所以认它就行，没落上的情况交给看门狗兜底。
+        return true;
+      }
       _lastContentFocus = null;
-    } else if (last != null) {
-      last.requestFocus();
-      return true;
     }
     final anchor = _tvBarAnchor.rect;
     if (anchor.isEmpty) return false;
@@ -193,19 +303,13 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     // 焦点就交给了一个「没有画面」的容器：requestFocus 成功、界面毫无变化，
     // 再按下键又落回它身上——这就是「下键按了没反应」的真凶。
     final candidates = <FocusNode>[];
-    FocusScopeNode? scopeBelow;
     for (final node in FocusManager.instance.rootScope.traversalDescendants) {
       if (_isInTopBar(node)) continue;
       final rect = node.rect;
       if (rect.height <= 0 || rect.width <= 0) continue;
       if (rect.top < barBottom - 1) continue;
       if (rect.top >= viewport.height) continue;
-      if (node is FocusScopeNode) {
-        if (scopeBelow == null || rect.top < scopeBelow.rect.top) {
-          scopeBelow = node;
-        }
-        continue;
-      }
+      if (node is FocusScopeNode) continue;
       if (!node.canRequestFocus) continue;
       // 有些页面会在最外层套一个「整片区域」的 Focus（用来接快捷键、兜住焦点），
       // 它同样是可聚焦的，矩形又刚好铺满内容区、top 也最靠上——不排除掉的话，
@@ -216,6 +320,10 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
       candidates.add(node);
     }
     if (candidates.isNotEmpty) {
+      _dbg(
+        'candidates=${candidates.length} '
+        'first=${_describe(candidates.first)}',
+      );
       candidates.sort((a, b) {
         final ra = a.rect;
         final rb = b.rect;
@@ -224,14 +332,32 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
         if (rowA != rowB) return rowA.compareTo(rowB);
         return ra.left.compareTo(rb.left);
       });
-      candidates.first.requestFocus();
-      return true;
+      // 只按第一格。千万别写成「逐个 requestFocus 直到 hasPrimaryFocus」：
+      // requestFocus 只是把节点标记为「下一拍要拿焦点」，同一拍里连按十几次，
+      // 最终生效的是最后一个——实测下键从导航条落到网格右下角那张卡上。
+      for (final node in candidates) {
+        if (!_isInVisibleSubtree(node)) continue;
+        _dbg('pick ${node.rect}');
+        node.requestFocus();
+        return true;
+      }
     }
-    // 兜底：整页一个可聚焦控件都没有（还在加载、或者是空状态页）时，
-    // 让路由自己的 scope 做一次标准的方向遍历。
-    if (scopeBelow != null) {
-      scopeBelow.requestFocus();
-      if (scopeBelow.focusInDirection(TraversalDirection.down)) return true;
+    // 此刻内容区一个新卡片都没有：换分类后列表正在重新拉取是最常见的原因。
+    // 别把焦点交给路由的 FocusScope 兜底——那等于「屏幕上没有焦点框」，
+    // 而且下一拍的重试判据（焦点还在导航条里）也随之失效，用户看到的就是
+    // 「选了类型之后下键怎么按都下不去」。正确做法是焦点留在导航条上，
+    // 等卡片挂上来再落下去。
+    if (attempt < 20 && !_isCovered) {
+      Future<void>.delayed(const Duration(milliseconds: 150), () {
+        if (!mounted || _isCovered) return;
+        final primary = FocusManager.instance.primaryFocus;
+        if (primary == null || _isInTopBar(primary)) {
+          _focusContent(attempt: attempt + 1);
+        }
+      });
+      // 这次下键算我们接住了：焦点在导航条上等卡片，别让默认遍历
+      // 把焦点挪到别的胶囊上去。
+      return true;
     }
     return false;
   }
@@ -379,40 +505,40 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
     );
     final Widget rail = EmbeddedNativeControlArea(
       child: NavigationRail(
-              backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-              groupAlignment: 1,
-              leading: FloatingActionButton(
-                elevation: 0,
-                heroTag: null,
-                onPressed: () => context.pushNamed('/search/'),
-                child: const Icon(Icons.search),
-              ),
-              labelType: NavigationRailLabelType.selected,
-              destinations: const <NavigationRailDestination>[
-                NavigationRailDestination(
-                  selectedIcon: Icon(Icons.home),
-                  icon: Icon(Icons.home_outlined),
-                  label: Text('推荐'),
-                ),
-                NavigationRailDestination(
-                  selectedIcon: Icon(Icons.timeline),
-                  icon: Icon(Icons.timeline_outlined),
-                  label: Text('时间表'),
-                ),
-                NavigationRailDestination(
-                  selectedIcon: Icon(Icons.favorite),
-                  icon: Icon(Icons.favorite_border),
-                  label: Text('追番'),
-                ),
-                NavigationRailDestination(
-                  selectedIcon: Icon(Icons.settings),
-                  icon: Icon(Icons.settings_outlined),
-                  label: Text('我的'),
-                ),
-              ],
-              selectedIndex: selectedIndex,
-              onDestinationSelected: _selectDestination,
-            ),
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+        groupAlignment: 1,
+        leading: FloatingActionButton(
+          elevation: 0,
+          heroTag: null,
+          onPressed: () => context.pushNamed('/search/'),
+          child: const Icon(Icons.search),
+        ),
+        labelType: NavigationRailLabelType.selected,
+        destinations: const <NavigationRailDestination>[
+          NavigationRailDestination(
+            selectedIcon: Icon(Icons.home),
+            icon: Icon(Icons.home_outlined),
+            label: Text('推荐'),
+          ),
+          NavigationRailDestination(
+            selectedIcon: Icon(Icons.timeline),
+            icon: Icon(Icons.timeline_outlined),
+            label: Text('时间表'),
+          ),
+          NavigationRailDestination(
+            selectedIcon: Icon(Icons.favorite),
+            icon: Icon(Icons.favorite_border),
+            label: Text('追番'),
+          ),
+          NavigationRailDestination(
+            selectedIcon: Icon(Icons.settings),
+            icon: Icon(Icons.settings_outlined),
+            label: Text('我的'),
+          ),
+        ],
+        selectedIndex: selectedIndex,
+        onDestinationSelected: _selectDestination,
+      ),
     );
 
     if (!AppMode.isTv) {
@@ -461,11 +587,27 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
             return KeyEventResult.handled;
           }
 
+          // 焦点已经跑丢到看不见的控件上：先把界面救回来，再按这次的方向走。
+          // 不然方向键会在离屏节点之间转圈，用户看到的是「焦点框没了、按不动」。
+          if (_isFocusInsideShell() && _isInvisibleWidgetFocus()) {
+            if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+              if (_focusContent()) return KeyEventResult.handled;
+            }
+            _focusTopBar();
+            _assertBarFocus();
+            if (_tvNavFocus.hasPrimaryFocus) return KeyEventResult.handled;
+          }
+
           final primary = FocusManager.instance.primaryFocus;
-          final hasWidgetFocus = primary != null &&
-              primary.context != null &&
+          final hasWidgetFocus =
+              primary != null &&
+              _isNodeAlive(primary) &&
               primary is! FocusScopeNode;
           final inTopBar = hasWidgetFocus && _isInTopBar(primary);
+          _dbg(
+            'key=${event.logicalKey.keyLabel} hasWidget=$hasWidgetFocus '
+            'inBar=$inTopBar primary=${_describe(primary)}',
+          );
           if (!inTopBar && hasWidgetFocus) {
             _lastContentFocus = primary;
           }
@@ -501,6 +643,22 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
               // 还没挂上时会失败）。
               _focusTopBar();
               _assertBarFocus();
+            } else {
+              // focusInDirection 是同步的，但落点下一拍才生效，这里读不到落点。
+              // 落地之后再验一次：落到离屏/满屏容器上等于「框没了」，
+              // 那就干脆把焦点收回导航条，别让用户卡在没有画面的节点上。
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted || _isCovered) return;
+                final landed = FocusManager.instance.primaryFocus;
+                if (landed == null ||
+                    landed is FocusScopeNode ||
+                    !_isNodeAlive(landed) ||
+                    (!_isInTopBar(landed) && !_isFocusableAndVisible(landed))) {
+                  _dbg('up land invisible -> bar ${_describe(landed)}');
+                  _focusTopBar();
+                  _assertBarFocus();
+                }
+              });
             }
             return KeyEventResult.handled;
           }
@@ -530,9 +688,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
                 ),
               ),
             ),
-            Expanded(
-              child: _outlet(context, borderRadius: topBarRadius),
-            ),
+            Expanded(child: _outlet(context, borderRadius: topBarRadius)),
           ],
         ),
       ),

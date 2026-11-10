@@ -6,6 +6,7 @@ import 'package:kazumi/bean/widget/bangumi_mirror_error_widget.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/pages/popular/popular_controller.dart';
+import 'package:kazumi/pages/popular/popular_tv_tag_bar.dart';
 import 'package:kazumi/bean/card/bangumi_card.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
@@ -34,6 +35,16 @@ class _PopularPageState extends State<PopularPage> {
     debugLabel: 'popular-back-to-top',
   );
 
+  /// 电视形态：类型条，外壳需要把焦点精确送回「当前那一颗」。
+  final GlobalKey<TvTagBarState> _tagBarKey = GlobalKey<TvTagBarState>();
+
+  /// 每张海报一个独立焦点节点：下键要能确定地落到第一张，
+  /// 而不是靠方向遍历在懒构建的网格里猜。
+  final Map<int, FocusNode> _cardNodes = {};
+
+  /// 用户按过 ↓ 但网格还在拉取：等列表回来再兑现这次下键。
+  bool _pendingDescent = false;
+
   @override
   void initState() {
     super.initState();
@@ -51,33 +62,88 @@ class _PopularPageState extends State<PopularPage> {
     scrollController.removeListener(scrollListener);
     scrollController.dispose();
     _backToTopFocus.dispose();
+    for (final node in _cardNodes.values) {
+      node.dispose();
+    }
     super.dispose();
   }
 
-  /// 电视形态：网格走到最右一列再按右键，焦点落到右下角的「快速回顶」。
+  /// 电视形态的页内按键：只补两条「默认遍历做不到」的桥。
+  ///
+  /// 「类型条 ⇄ 网格」这一段必须自己搭：网格是 Sliver 懒构建的，
+  /// 一行都还没布局出来时（刚换类型、列表还在拉）方向遍历找不到任何候选，
+  /// 按 ↓ 就原地不动 —— 这正是「选完类型焦点下不去」的来源。
+  /// 其余方向一律放行给默认遍历和外层外壳（导航条那条桥在外壳里）。
   KeyEventResult _handleTvKeys(FocusNode node, KeyEvent event) {
-    if (!AppMode.isTv || event is! KeyDownEvent) {
+    if (!AppMode.isTv) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey != LogicalKeyboardKey.arrowUp) {
       return KeyEventResult.ignored;
     }
     final primary = FocusManager.instance.primaryFocus;
-    if (primary == null) return KeyEventResult.ignored;
-    if (event.logicalKey == LogicalKeyboardKey.arrowRight &&
-        !identical(primary, _backToTopFocus)) {
-      // 右边还有落脚点就照常走；没有了才交给右下角按钮
-      if (!primary.focusInDirection(TraversalDirection.right)) {
-        _backToTopFocus.requestFocus();
-      }
-      return KeyEventResult.handled;
+    if (primary == null || !_isFirstRowCard(primary)) {
+      return KeyEventResult.ignored;
     }
-    if (event.logicalKey == LogicalKeyboardKey.arrowLeft &&
-        identical(primary, _backToTopFocus)) {
-      if (!_backToTopFocus.focusInDirection(TraversalDirection.left)) {
-        return KeyEventResult.ignored;
-      }
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
+    // 网格第一行按上：回到类型条当前选中的那一颗。
+    _tagBarKey.currentState?.focusCurrent();
+    return KeyEventResult.handled;
   }
+
+  /// 焦点是否在网格第一行某张卡上（按列数判断，不看 y 坐标——
+  /// 卡片用了 1.07 缩放，坐标会随焦点状态跳）。
+  bool _isFirstRowCard(FocusNode node) {
+    final list = _currentList;
+    for (var i = 0; i < list.length && i < _crossCount; i++) {
+      if (identical(_cardNodes[list[i].id], node)) return true;
+    }
+    return false;
+  }
+
+  /// ↓ 进网格：有卡片就落第一张；没有（还在拉取）就记住，等它出来再落。
+  void _descendToGrid() {
+    if (_focusCardAt(0)) return;
+    _pendingDescent = true;
+  }
+
+  bool _focusCardAt(int index) {
+    final list = _currentList;
+    if (index < 0 || index >= list.length) return false;
+    final node = _cardNode(list[index]);
+    // 还没挂到树上（被 Sliver 回收 / 还没布局）时 requestFocus 是空操作，
+    // 直接说没落上，交给调用方重试。
+    if (node.context == null || !node.canRequestFocus) return false;
+    node.requestFocus();
+    return true;
+  }
+
+  /// 数据回来之后兑现「用户刚才按过 ↓」。
+  void _consumePendingDescent(List<BangumiItem> list) {
+    if (!_pendingDescent || list.isEmpty) return;
+    _pendingDescent = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _focusCardAt(0);
+    });
+  }
+
+  /// 电视形态下当前要显示的列表（热门 / 指定类型）。
+  List<BangumiItem> get _currentList => popularController.currentTag.isEmpty
+      ? popularController.trendList
+      : popularController.bangumiList;
+
+  int get _crossCount {
+    final width = MediaQuery.sizeOf(context).width;
+    if (width > LayoutBreakpoint.medium['width']!) return 6;
+    if (width > LayoutBreakpoint.compact['width']!) return 5;
+    return 3;
+  }
+
+  FocusNode _cardNode(BangumiItem item) => _cardNodes.putIfAbsent(
+    item.id,
+    () => FocusNode(debugLabel: 'tv-popular-card:${item.id}'),
+  );
 
   void scrollListener() {
     popularController.scrollOffset = scrollController.offset;
@@ -102,65 +168,36 @@ class _PopularPageState extends State<PopularPage> {
         canRequestFocus: false,
         skipTraversal: true,
         onKeyEvent: _handleTvKeys,
-        child: CustomScrollView(
-          controller: scrollController,
-          slivers: [
-            // 电视形态下标题与「热门番组」筛选都收进了顶部导航条，
-            // 这里不再重复一层 120px 的展开标题。
-            if (!AppMode.isTv) buildSliverAppBar(),
-            SliverToBoxAdapter(
-              child: Observer(
-                builder: (_) => AnimatedOpacity(
-                  opacity: popularController.isLoadingMore ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 300),
-                  child: popularController.isLoadingMore
-                      ? const LinearProgressIndicator(minHeight: 4)
-                      : const SizedBox(height: 4),
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(
-                StyleString.cardSpace,
-                0,
-                StyleString.cardSpace,
-                0,
-              ),
-              sliver: Observer(
-                builder: (_) {
-                  if (popularController.isTimeOut) {
-                    return SliverToBoxAdapter(
-                      child: SizedBox(
-                        height: 400,
-                        child: BangumiMirrorErrorWidget(
-                          onRetry: () {
-                            if (popularController.trendList.isEmpty) {
-                              popularController.queryBangumiByTrend();
-                            } else {
-                              popularController.queryBangumiByTag();
-                            }
-                          },
-                          onSettingsReturned: () {
-                            if (mounted) {
-                              setState(() {});
-                            }
-                          },
-                        ),
-                      ),
-                    );
-                  }
-                  return contentGrid(
-                    (popularController.currentTag == '')
-                        ? popularController.trendList
-                        : popularController.bangumiList,
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+        child: AppMode.isTv
+            ? Column(
+                children: [
+                  // 类型条常驻页顶：电视上「换类型」是高频动作，不该藏在弹窗里。
+                  Observer(builder: (_) => _buildTagBar()),
+                  Expanded(child: _buildContent()),
+                ],
+              )
+            : _buildContent(),
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: _buildBackToTop(),
+    );
+  }
+
+  /// 电视形态的番剧类型条。选择逻辑仍然是 PopularController.selectTag，
+  /// 这里只负责「类型条在页顶、下键能进网格」。
+  Widget _buildTagBar() => TvTagBar(
+    key: _tagBarKey,
+    tags: ['', ...defaultAnimeTags],
+    currentTag: popularController.currentTag,
+    onSelect: _selectTag,
+    onDown: _descendToGrid,
+  );
+
+  Widget _buildBackToTop() {
+    // 电视上这颗「回到顶部」不参与焦点：它在右下角，一旦焦点落到这里，
+    // 下键/右键就全都没反应了（下面和右边都没东西）。
+    return ExcludeFocus(
+      excluding: AppMode.isTv,
+      child: FloatingActionButton(
         focusNode: _backToTopFocus,
         onPressed: () => scrollController.animateTo(
           0,
@@ -172,14 +209,83 @@ class _PopularPageState extends State<PopularPage> {
     );
   }
 
+  Widget _buildContent() {
+    return CustomScrollView(
+      controller: scrollController,
+      slivers: [
+        // 电视形态的标题与类型筛选已经在页顶（类型条），
+        // 这里不再重复一层 120px 的展开标题。
+        if (!AppMode.isTv) buildSliverAppBar(),
+        SliverToBoxAdapter(
+          child: Observer(
+            builder: (_) => AnimatedOpacity(
+              opacity: popularController.isLoadingMore ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 300),
+              child: popularController.isLoadingMore
+                  ? const LinearProgressIndicator(minHeight: 4)
+                  : const SizedBox(height: 4),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(
+            StyleString.cardSpace,
+            0,
+            StyleString.cardSpace,
+            0,
+          ),
+          sliver: Observer(
+            builder: (_) {
+              if (popularController.isTimeOut) {
+                return SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: 400,
+                    child: BangumiMirrorErrorWidget(
+                      onRetry: () {
+                        if (popularController.trendList.isEmpty) {
+                          popularController.queryBangumiByTrend();
+                        } else {
+                          popularController.queryBangumiByTag();
+                        }
+                      },
+                      onSettingsReturned: () {
+                        if (mounted) {
+                          setState(() {});
+                        }
+                      },
+                    ),
+                  ),
+                );
+              }
+              final list = _currentList;
+              // 用户按过 ↓ 但当时还没有卡片：数据一回来就把焦点送下去。
+              _consumePendingDescent(list);
+              return contentGrid(list);
+            },
+          ),
+        ),
+        // 换类型之后列表还在拉取：给一个明确的「正在加载」，
+        // 而不是留一屏空白（空网格会让人以为方向键彻底失灵）。
+        if (AppMode.isTv)
+          SliverToBoxAdapter(
+            child: Observer(
+              builder: (_) =>
+                  AppMode.isTv &&
+                      _currentList.isEmpty &&
+                      popularController.isLoadingMore
+                  ? const Padding(
+                      padding: EdgeInsets.only(top: 120),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget contentGrid(List<BangumiItem> bangumiList) {
-    int crossCount = 3;
-    if (MediaQuery.sizeOf(context).width > LayoutBreakpoint.compact['width']!) {
-      crossCount = 5;
-    }
-    if (MediaQuery.sizeOf(context).width > LayoutBreakpoint.medium['width']!) {
-      crossCount = 6;
-    }
+    final crossCount = _crossCount;
     return SliverPadding(
       padding: const EdgeInsets.all(8),
       sliver: SliverGrid(
@@ -199,7 +305,10 @@ class _PopularPageState extends State<PopularPage> {
               // 每张卡单独成层：焦点框缩放 / 图片淡入只重绘这一格，
               // 不带着整个网格一起重绘（弱 GPU 上滚动掉帧的主要来源）。
               ? RepaintBoundary(
-                  child: BangumiCardV(bangumiItem: bangumiList[index]),
+                  child: BangumiCardV(
+                    bangumiItem: bangumiList[index],
+                    focusNode: _cardNode(bangumiList[index]),
+                  ),
                 )
               : null;
         }, childCount: bangumiList.isNotEmpty ? bangumiList.length : 10),

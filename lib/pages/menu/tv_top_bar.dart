@@ -1,11 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_modular/flutter_modular.dart';
-import 'package:flutter_mobx/flutter_mobx.dart';
 
-import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/tv_focus_ring.dart';
-import 'package:kazumi/pages/popular/popular_controller.dart';
-import 'package:kazumi/utils/constants.dart';
 
 /// 电视形态的顶部导航条。
 ///
@@ -65,17 +60,9 @@ class TvTopBar extends StatelessWidget {
               onTap: () => onSelect(i),
             ),
           ],
-          // 推荐页的「热门番组」筛选，和导航放在同一条上
-          if (selectedIndex == 0) ...[
-            const SizedBox(width: 16),
-            Container(
-              width: 1,
-              height: 24,
-              color: colors.outlineVariant.withValues(alpha: 0.5),
-            ),
-            const SizedBox(width: 16),
-            const _TvTagPicker(),
-          ],
+          // 番剧类型筛选不放在这里：它是「页面级筛选」，已经做成推荐页顶上
+          // 常驻的类型条（见 popular_tv_tag_bar.dart）。放在导航条里只有一个
+          // 好处——少按一下下键，代价是多一层弹窗和一堆焦点回不来的问题。
           const Spacer(),
           _TvIconPill(
             icon: Icons.history_rounded,
@@ -130,8 +117,9 @@ class _TvNavPillState extends State<_TvNavPill> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final selected = widget.selected;
-    final foreground =
-        selected ? colors.onPrimaryContainer : colors.onSurfaceVariant;
+    final foreground = selected
+        ? colors.onPrimaryContainer
+        : colors.onSurfaceVariant;
     return TvFocusRing(
       borderRadius: 22,
       child: Material(
@@ -201,96 +189,5 @@ class _TvIconPill extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-/// 「热门番组」标签选择。电视上用弹窗列表而不是下拉菜单：
-/// 画中画菜单在遥控器上焦点容易跑飞，弹窗是一整屏内可控的焦点组。
-class _TvTagPicker extends StatelessWidget {
-  const _TvTagPicker();
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = inject<PopularController>();
-    final colors = Theme.of(context).colorScheme;
-    return Observer(
-      builder: (_) {
-        final isTrend = controller.currentTag.isEmpty;
-        final label = isTrend ? '热门番组' : controller.currentTag;
-        return TvFocusRing(
-          borderRadius: 22,
-          child: Material(
-            color: colors.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(22),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(22),
-              onTap: () => _pickTag(context, controller),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: colors.onSurface,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(Icons.keyboard_arrow_down_rounded,
-                        size: 20, color: colors.onSurfaceVariant),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _pickTag(
-      BuildContext context, PopularController controller) async {
-    final tags = <String>['', ...defaultAnimeTags];
-    final picked = await KazumiDialog.show<String>(
-      context: context,
-      builder: (_) => AlertDialog(
-        constraints: const BoxConstraints(maxWidth: 520),
-        title: const Text('选择番剧标签'),
-        contentPadding: const EdgeInsets.symmetric(vertical: 8),
-        content: SizedBox(
-          width: 420,
-          height: 420,
-          child: ListView.builder(
-            itemCount: tags.length,
-            itemBuilder: (context, index) {
-              final tag = tags[index];
-              final selected = tag == controller.currentTag;
-              return ListTile(
-                autofocus: selected,
-                selected: selected,
-                title: Text(tag.isEmpty ? '热门番组' : tag),
-                trailing: selected
-                    ? const Icon(Icons.check_rounded, size: 20)
-                    : null,
-                onTap: () => Navigator.of(context).pop(tag),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-        ],
-      ),
-    );
-    if (picked == null) return;
-    await controller.selectTag(picked);
   }
 }

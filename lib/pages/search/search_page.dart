@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
@@ -13,6 +14,7 @@ import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/bean/widget/tv_focus_ring.dart';
+import 'package:kazumi/bean/widget/tv_action_dialog.dart';
 import 'package:kazumi/bean/widget/tv_search_field.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/pages/search/search_controller.dart';
@@ -40,6 +42,17 @@ class SearchPage extends StatefulWidget {
 }
 
 class _SearchPageState extends State<SearchPage> {
+  static const bool _kDbg = bool.fromEnvironment('FOCUS_DEBUG');
+
+  void _dbg(String msg) {
+    if (!_kDbg) return;
+    final p = FocusManager.instance.primaryFocus;
+    debugPrint(
+      '[SDBG] $msg primary=${p?.runtimeType}/${p?.debugLabel}'
+      '/${p?.context?.widget.runtimeType}',
+    );
+  }
+
   final _input = TextEditingController();
   final _inputFocus = FocusNode();
   final _scroll = ScrollController();
@@ -47,6 +60,14 @@ class _SearchPageState extends State<SearchPage> {
   final _searchHeaderKey = GlobalKey();
   String? _submittedQuery;
   bool _managingHistory = false;
+
+  /// 电视形态：每张结果卡一个独立焦点节点。列表分页、重建、上下遍历都靠它
+  /// 保持「焦点跟着同一部番剧走」，不至于一刷新就掉到别处或干脆没有焦点。
+  final Map<int, FocusNode> _cardNodes = {};
+
+  /// 结果工具栏的两颗胶囊（排序 / 筛选），用于给网格第一行按上键搭桥。
+  final FocusNode _sortFocus = FocusNode(debugLabel: 'tv-search-sort');
+  final FocusNode _filterFocus = FocusNode(debugLabel: 'tv-search-filter');
 
   SearchPageController get _controller => widget.controller;
   bool get _hasSearched => _submittedQuery != null;
@@ -70,6 +91,11 @@ class _SearchPageState extends State<SearchPage> {
     _input.dispose();
     _inputFocus.dispose();
     _scroll.dispose();
+    _sortFocus.dispose();
+    _filterFocus.dispose();
+    for (final node in _cardNodes.values) {
+      node.dispose();
+    }
     super.dispose();
   }
 
@@ -84,11 +110,18 @@ class _SearchPageState extends State<SearchPage> {
     final filters = SearchParser(value).toFilterState();
     final query = SearchParser.fromFilterState(filters);
     _inputFocus.unfocus();
+    _dbg('after unfocus');
     _writeInput(query);
     setState(() => _submittedQuery = query);
     final request = _controller.searchBangumi(query, type: 'init');
     if (_scroll.hasClients) _scroll.jumpTo(0);
     await request;
+    if (!AppMode.isTv || !mounted) return;
+    // 结果回来就把焦点送进网格：电视上「搜完直接浏览结果」是主路径，
+    // 焦点停在搜索胶囊上会让下键先落到排序按钮，多按一次才到卡片。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusCardAt(0);
+    });
   }
 
   Future<void> _applyFilters(SearchFilterState filters) =>
@@ -101,7 +134,147 @@ class _SearchPageState extends State<SearchPage> {
 
   void _loadMore() {
     final query = _submittedQuery;
-    if (query != null) _controller.searchBangumi(query);
+    if (query == null) return;
+    _dbg('loadMore items=${_controller.bangumiList.length}');
+    _controller.searchBangumi(query);
+  }
+
+  List<BangumiItem> _filteredResults() {
+    final watched = _controller.notShowWatchedBangumis
+        ? _controller.loadWatchedBangumiIds()
+        : <int>{};
+    final abandoned = _controller.notShowAbandonedBangumis
+        ? _controller.loadAbandonedBangumiIds()
+        : <int>{};
+    return _controller.bangumiList
+        .where(
+          (item) => !watched.contains(item.id) && !abandoned.contains(item.id),
+        )
+        .toList();
+  }
+
+  FocusNode _cardNode(BangumiItem item) => _cardNodes.putIfAbsent(
+    item.id,
+    () => FocusNode(debugLabel: 'search-result:${item.id}'),
+  );
+
+  bool _focusCardAt(int index) {
+    final items = _filteredResults();
+    if (index < 0 || index >= items.length) return false;
+    final node = _cardNode(items[index]);
+    if (node.context == null) return false;
+    node.requestFocus();
+    return true;
+  }
+
+  /// 焦点是否还在搜索框那一行（工具栏上方）。
+  bool _isAboveToolbar(FocusNode node) {
+    if (_sortFocus.context == null || node.context == null) return false;
+    return node.rect.bottom <= _sortFocus.rect.top + 2;
+  }
+
+  /// 焦点是否在第一行结果卡上：拿第一张卡的 top 当行基准，
+  /// 不做列数推算，缩放导致的几像素误差用 8 容忍。
+  bool _isFirstRowCard(FocusNode node) {
+    final items = _filteredResults();
+    if (items.isEmpty || node.context == null) return false;
+    if (!_cardNodes.values.any((n) => identical(n, node))) return false;
+    final first = _cardNodes[items.first.id];
+    if (first == null || first.context == null) return false;
+    return (node.rect.top - first.rect.top).abs() < 8;
+  }
+
+  /// 电视形态的页内按键：补齐「工具栏 ⇄ 网格」这一段。
+  ///
+  /// 默认方向遍历在这页很难用：第一行按上会一路窜到 AppBar 的返回箭头
+  /// （那个白框在左上角，用户会当成「焦点框丢了」），结果还没回来时按 ↓
+  /// 又没有任何候选。所以两条边界自己搭。
+  KeyEventResult _handleTvKeys(FocusNode node, KeyEvent event) {
+    if (!AppMode.isTv) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (!_hasSearched) return KeyEventResult.ignored;
+    final primary = FocusManager.instance.primaryFocus;
+    if (primary == null) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown &&
+        (identical(primary, _sortFocus) ||
+            identical(primary, _filterFocus) ||
+            _isAboveToolbar(primary))) {
+      if (_focusCardAt(0)) return KeyEventResult.handled;
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp &&
+        _isFirstRowCard(primary)) {
+      _sortFocus.requestFocus();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Future<void> _showSortPicker() async {
+    final current = SearchParser(
+      _submittedQuery ?? _input.text,
+    ).toFilterState();
+    final picked = await showTvActionDialog<String>(
+      context,
+      title: '排序方式',
+      entries: [
+        for (final entry in _searchSortLabels.entries)
+          TvActionEntry(
+            value: entry.key,
+            label: '按${entry.value}排序',
+            icon: entry.key == current.sort
+                ? Icons.check_circle_rounded
+                : Icons.circle_outlined,
+          ),
+      ],
+    );
+    if (!mounted || picked == null || picked == current.sort) return;
+    await _applyFilters(current.copyWith(sort: picked));
+  }
+
+  /// 电视形态的结果工具栏：计数 + 排序 + 筛选，固定在搜索框下面。
+  Widget _tvToolbar() {
+    return Observer(
+      builder: (_) {
+        final items = _filteredResults();
+        final busy = _controller.isLoading;
+        final current = SearchParser(_submittedQuery ?? '').toFilterState();
+        return Padding(
+          padding: const EdgeInsets.only(top: 2, bottom: 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  busy ? '正在搜索…' : '${items.length} 部番剧',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              _SearchToolbarPill(
+                icon: Icons.swap_vert_rounded,
+                label: '按${_sortLabel(current.sort)}',
+                focusNode: _sortFocus,
+                onTap: _showSortPicker,
+              ),
+              const SizedBox(width: 10),
+              _SearchToolbarPill(
+                icon: Icons.tune_rounded,
+                label: '筛选',
+                focusNode: _filterFocus,
+                onTap: _showFilters,
+                highlighted:
+                    current.hasAdvancedFilters ||
+                    _controller.notShowWatchedBangumis ||
+                    _controller.notShowAbandonedBangumis,
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _showFilters() async {
@@ -322,85 +495,75 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  List<Widget> _resultSlivers(double width) {
+  List<Widget> _resultSlivers(double width, {bool withHeader = true}) {
     final allItems = _controller.bangumiList.toList();
-    final watched = _controller.notShowWatchedBangumis
-        ? _controller.loadWatchedBangumiIds()
-        : <int>{};
-    final abandoned = _controller.notShowAbandonedBangumis
-        ? _controller.loadAbandonedBangumiIds()
-        : <int>{};
-    final items = allItems
-        .where(
-          (item) => !watched.contains(item.id) && !abandoned.contains(item.id),
-        )
-        .toList();
+    final items = _filteredResults();
     final busy = _controller.isLoading;
     final failed = _controller.isTimeOut;
     final submitted = SearchParser(_submittedQuery!).toFilterState();
     final summary = _filterSummary(submitted);
 
     return [
-      SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '搜索结果',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+      if (withHeader)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '搜索结果',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                     ),
-                  ),
-                  if (!submitted.isIdSearch)
-                    _SearchSortMenu(
-                      value: submitted.sort,
-                      onChanged: (sort) =>
-                          _applyFilters(submitted.copyWith(sort: sort)),
+                    if (!submitted.isIdSearch)
+                      _SearchSortMenu(
+                        value: submitted.sort,
+                        onChanged: (sort) =>
+                            _applyFilters(submitted.copyWith(sort: sort)),
+                      ),
+                    IconButton(
+                      tooltip: '筛选番剧',
+                      onPressed: _showFilters,
+                      icon: Badge(
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        isLabelVisible:
+                            submitted.hasAdvancedFilters ||
+                            _controller.notShowWatchedBangumis ||
+                            _controller.notShowAbandonedBangumis,
+                        smallSize: 6,
+                        child: const Icon(Icons.tune_rounded),
+                      ),
                     ),
-                  IconButton(
-                    tooltip: '筛选番剧',
-                    onPressed: _showFilters,
-                    icon: Badge(
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      isLabelVisible:
-                          submitted.hasAdvancedFilters ||
-                          _controller.notShowWatchedBangumis ||
-                          _controller.notShowAbandonedBangumis,
-                      smallSize: 6,
-                      child: const Icon(Icons.tune_rounded),
-                    ),
-                  ),
-                ],
-              ),
-              Text(
-                busy
-                    ? '正在搜索…'
-                    : '${items.length} 部番剧${items.length < allItems.length ? ' · 隐藏 ${allItems.length - items.length} 部' : ''}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ],
                 ),
-              ),
-              if (summary.isNotEmpty) ...[
-                const SizedBox(height: 6),
                 Text(
-                  summary,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  busy
+                      ? '正在搜索…'
+                      : '${items.length} 部番剧${items.length < allItems.length ? ' · 隐藏 ${allItems.length - items.length} 部' : ''}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
+                if (summary.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    summary,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
-      ),
       if (busy && allItems.isEmpty)
         const SliverToBoxAdapter(child: _SearchLoadingState())
       else if (allItems.isEmpty)
@@ -432,31 +595,49 @@ class _SearchPageState extends State<SearchPage> {
           items: items,
           width: width,
           showRating: GStorage.getSetting(SettingsKeys.showRating),
+          focusNodeFor: _cardNode,
         ),
-      if (allItems.isNotEmpty || !failed)
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Center(
-              child: busy
-                  ? (allItems.isEmpty
-                        ? const SizedBox.shrink()
-                        : const LoadingIndicator(size: 32))
-                  : _controller.hasMoreSearchResults
-                  ? TextButton.icon(
-                      onPressed: _loadMore,
-                      icon: const Icon(Icons.expand_more_rounded),
-                      label: const Text('加载更多'),
-                    )
-                  : Text(
-                      '已经看到全部结果',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      // 电视形态不放「加载更多」按钮：滚到底自动续拉，
+      // 按钮本身还成了「一按就消失的焦点目标」（加载中它被换成指示器）。
+      if (AppMode.isTv)
+        if (allItems.isNotEmpty && !busy && !_controller.hasMoreSearchResults)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text(
+                  '已经看到全部结果',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          )
+        else if (allItems.isNotEmpty || !failed)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: busy
+                    ? (allItems.isEmpty
+                          ? const SizedBox.shrink()
+                          : const LoadingIndicator(size: 32))
+                    : _controller.hasMoreSearchResults
+                    ? TextButton.icon(
+                        onPressed: _loadMore,
+                        icon: const Icon(Icons.expand_more_rounded),
+                        label: const Text('加载更多'),
+                      )
+                    : Text(
+                        '已经看到全部结果',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
-                    ),
+              ),
             ),
           ),
-        ),
     ];
   }
 
@@ -469,52 +650,83 @@ class _SearchPageState extends State<SearchPage> {
       ),
       body: SafeArea(
         top: false,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final horizontal = constraints.maxWidth >= 700 ? 32.0 : 20.0;
-            final width = math.min(
-              _hasSearched ? 1120.0 : 760.0,
-              constraints.maxWidth - horizontal * 2,
-            );
-            final inset = (constraints.maxWidth - width) / 2;
-            final pinSearch =
-                _hasSearched &&
-                constraints.maxHeight >= 420 &&
-                MediaQuery.textScalerOf(context).scale(16) <= 24;
-            Widget scrollView(List<Widget> slivers) => CustomScrollView(
-              controller: _scroll,
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              slivers: [
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(inset, 0, inset, 24),
-                  sliver: SliverMainAxisGroup(slivers: slivers),
-                ),
-              ],
-            );
-            return Column(
-              children: [
-                if (pinSearch)
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: inset),
-                    child: _header(),
+        child: Focus(
+          canRequestFocus: false,
+          skipTraversal: true,
+          onKeyEvent: _handleTvKeys,
+          onFocusChange: (f) => _dbg('page focusChange=$f'),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final horizontal = constraints.maxWidth >= 700 ? 32.0 : 20.0;
+              final width = math.min(
+                _hasSearched ? 1120.0 : 760.0,
+                constraints.maxWidth - horizontal * 2,
+              );
+              final inset = (constraints.maxWidth - width) / 2;
+              final pinSearch =
+                  _hasSearched &&
+                  constraints.maxHeight >= 420 &&
+                  MediaQuery.textScalerOf(context).scale(16) <= 24;
+              Widget scrollView(List<Widget> slivers) => CustomScrollView(
+                controller: _scroll,
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                slivers: [
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(inset, 0, inset, 24),
+                    sliver: SliverMainAxisGroup(slivers: slivers),
                   ),
-                Expanded(
-                  child: _hasSearched
-                      ? Observer(
-                          builder: (_) => scrollView([
-                            if (!pinSearch)
-                              SliverToBoxAdapter(child: _header()),
-                            ..._resultSlivers(width),
+                ],
+              );
+              // 电视形态的结果页：搜索框和结果工具栏都固定，只有网格滚动。
+              // 纵向顺序因此永远确定——搜索框 → 工具栏 → 网格，
+              // 遥控器不会因为「滚到哪儿了」而落到别的地方去。
+              if (AppMode.isTv && _hasSearched) {
+                return Column(
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: inset),
+                      child: _header(),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: inset),
+                      child: _tvToolbar(),
+                    ),
+                    Expanded(
+                      child: Observer(
+                        builder: (_) => scrollView(
+                          _resultSlivers(width, withHeader: false),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }
+              return Column(
+                children: [
+                  if (pinSearch)
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: inset),
+                      child: _header(),
+                    ),
+                  Expanded(
+                    child: _hasSearched
+                        ? Observer(
+                            builder: (_) => scrollView([
+                              if (!pinSearch)
+                                SliverToBoxAdapter(child: _header()),
+                              ..._resultSlivers(width),
+                            ]),
+                          )
+                        : scrollView([
+                            SliverToBoxAdapter(child: _header()),
+                            SliverToBoxAdapter(child: _discovery()),
                           ]),
-                        )
-                      : scrollView([
-                          SliverToBoxAdapter(child: _header()),
-                          SliverToBoxAdapter(child: _discovery()),
-                        ]),
-                ),
-              ],
-            );
-          },
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
