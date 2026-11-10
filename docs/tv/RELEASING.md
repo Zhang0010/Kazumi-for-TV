@@ -116,3 +116,4 @@ shasum -a 256 KazumiForTV-1.0.2-beta-arm64-universal.apk
 | 1.0.2 beta | 20405 | `1.0.2-beta` | `63E69795…78A057` | `183bd907cfd0c76b13e2033ea0c091346906ff7ffba6d8e57a11d9072e9ddbca`（arm64，32 MB） |
 | 1.0.5 beta | 20408 | `1.0.5-beta` | `63E69795…78A057` | `929473489958edc5883950ebaa77945288d16bf227de3a2ed4463d4aa518076d`（arm64，32 MB） |
 | 1.0.6 beta | 20409 | `1.0.6-beta` | `63E69795…78A057` | `fc97226f76518e1837f233af16de9df4a4be0fc6deb78a61ce8f730bd79d9c3e`（arm64，32 MB） |
+| 1.0.7 beta | 20410 | `1.0.7-beta` | `63E69795…78A057` | `98b14ea41c688d4337e7a3a5b88f8d003f26df11adb789f499b70a3618b7f37c`（arm64，32 MB） |
