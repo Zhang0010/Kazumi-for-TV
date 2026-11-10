@@ -991,7 +991,7 @@ class _PlayerItemState extends State<PlayerItem>
     }
   }
 
-  void hideVideoController() {
+  void hideVideoController({bool restoreFocus = true}) {
     if (!_canHidePlayerPanel) {
       return;
     }
@@ -1000,7 +1000,11 @@ class _PlayerItemState extends State<PlayerItem>
     playerController.panel.showVideoController = false;
     // OSD 自己收起来（倒计时到点）时，把焦点还给播放器根节点：否则焦点留在
     // 刚被移除的按钮上，之后按 OK 就不是播放/暂停了。
-    if (AppMode.isTv &&
+    //
+    // 但「收起 OSD 去开选集抽屉」这类场景不能抢焦点：抽屉里的格子要自己拿焦点，
+    // 抢过去之后 OK 就选不了集（表现为「点进剧集选不了剧集」）。
+    if (restoreFocus &&
+        AppMode.isTv &&
         _openPlayerMenuCount == 0 &&
         (ModalRoute.of(context)?.isCurrent ?? true)) {
       widget.keyboardFocus.requestFocus();
@@ -1584,7 +1588,10 @@ class _PlayerItemState extends State<PlayerItem>
                               playerFocusNode: widget.keyboardFocus,
                               onBackPressed: widget.onBackPressed,
                               onShowOsd: showVideoController,
-                              onHideOsd: hideVideoController,
+                              // 收起 OSD 不是为了把焦点还给播放器（开选集抽屉时
+                              // 抽屉要自己拿焦点），所以这里不 restoreFocus。
+                              onHideOsd: () =>
+                                  hideVideoController(restoreFocus: false),
                               onSeekBy: (seconds) {
                                 unawaited(
                                   _seekWithPlayerTimer(

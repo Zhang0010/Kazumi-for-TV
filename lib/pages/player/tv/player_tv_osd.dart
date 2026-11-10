@@ -64,7 +64,6 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
   final FocusNode _backFocus = FocusNode(debugLabel: 'tv-back');
   final FocusNode _episodesFocus = FocusNode(debugLabel: 'tv-episodes');
 
-
   Timer? _hudTimer;
   String? _hudText;
 
@@ -308,13 +307,28 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_drawerOpen) return;
       final current = FocusManager.instance.primaryFocus;
+      // 播放器根节点也算「没有焦点框」：OSD 收起后焦点会退到这里，屏幕上照样
+      // 一个框都没有，这时候必须给选集挑落脚点，否则方向键和 OK 都是死的。
       if (current != null &&
+          current != widget.playerFocusNode &&
           current is! FocusScopeNode &&
           current.context != null) {
         return; // 已经有焦点框了，不抢
       }
       int? best;
       var bestDy = double.infinity;
+      // 优先落在「当前正在播的那一集」：从抽屉进来通常是想换集，从当前集两侧
+      // 挪最省事；它滚出屏幕了再退回几何上最靠上的那一格。
+      final currentEpisode = widget.videoPageController.selectedEpisode.episode;
+      final currentBox = _episodeKeys[currentEpisode]?.currentContext
+          ?.findRenderObject();
+      if (currentBox is RenderBox && currentBox.hasSize) {
+        final dy = currentBox.localToGlobal(Offset.zero).dy;
+        if (dy >= 0 && dy < MediaQuery.sizeOf(context).height) {
+          _episodeFocusNodes[currentEpisode]?.requestFocus();
+          return;
+        }
+      }
       for (final entry in _episodeKeys.entries) {
         final box = entry.value.currentContext?.findRenderObject();
         if (box is! RenderBox || !box.hasSize) continue;
@@ -598,6 +612,7 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
               if (!isArrow) return KeyEventResult.ignored;
               final current = FocusManager.instance.primaryFocus;
               if (current == null ||
+                  current == widget.playerFocusNode ||
                   current is FocusScopeNode ||
                   current.context == null) {
                 _focusTopmostEpisode();
