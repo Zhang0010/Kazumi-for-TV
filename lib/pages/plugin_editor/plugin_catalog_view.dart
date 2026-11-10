@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
+import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/card/rule_card.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/settings/network_mirror_settings.dart';
@@ -17,6 +18,7 @@ import 'package:kazumi/pages/plugin_editor/rule_management_widgets.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/services/network/rules_mirror.dart';
 import 'package:kazumi/services/storage/storage.dart';
+import 'package:kazumi/utils/app_mode.dart';
 
 enum _CatalogSort { lastUpdate, name }
 
@@ -114,6 +116,22 @@ class _PluginCatalogViewState extends State<PluginCatalogView> {
     } catch (_) {
       KazumiDialog.showToast(message: '切换规则仓库加速失败，请重试');
     }
+  }
+
+  /// 遥控器上整行就是一个焦点目标：OK 直接干这一行最主要的事。
+  /// 已安装 → 打开规则详情；未安装/可更新 → 安装/更新。
+  void _activate(PluginHTTPItem item, PluginCatalogItemStatus status) {
+    if (status != PluginCatalogItemStatus.installed) {
+      _install(item, status);
+      return;
+    }
+    for (final plugin in _controller.pluginList) {
+      if (plugin.name == item.name) {
+        context.pushNamed('/settings/plugin/editor', arguments: plugin);
+        return;
+      }
+    }
+    KazumiDialog.showToast(message: '「${item.name}」已安装');
   }
 
   Future<void> _install(
@@ -338,6 +356,13 @@ class _PluginCatalogViewState extends State<PluginCatalogView> {
                     return RuleCard(
                       key: ValueKey(item.name),
                       title: item.name,
+                      // 没有 onTap 的 InkWell 不可聚焦，整行就只剩右侧那颗
+                      // 安装按钮能选；已安装的行干脆一个焦点目标都没有，
+                      // 遥控器按 ↓ 就卡在标题栏下不来。
+                      onTap: () => _activate(item, status),
+                      // 右侧那颗「安装」按钮和整行的 OK 是同一个动作，
+                      // 电视上就别单独给它一个焦点了。
+                      trailingFocusable: !AppMode.isTv,
                       installed: status == PluginCatalogItemStatus.installed,
                       subtitle: item.author.isEmpty
                           ? null
@@ -406,6 +431,13 @@ class _CatalogRuleAction extends StatelessWidget {
               style: Theme.of(
                 context,
               ).textTheme.labelLarge?.copyWith(color: colors.onSurfaceVariant),
+            ),
+            const SizedBox(width: 2),
+            // 已安装的行按 OK 是「打开规则详情」，给个箭头让遥控器用户看得出来。
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: colors.onSurfaceVariant,
             ),
           ],
         ),
