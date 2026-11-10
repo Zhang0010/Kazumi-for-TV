@@ -158,7 +158,7 @@ class _AppWidgetState extends State<AppWidget>
       colorScheme: colorScheme,
       progressIndicatorTheme: progressIndicatorTheme2024,
       sliderTheme: sliderTheme2024,
-      pageTransitionsTheme: pageTransitionsTheme2024,
+      pageTransitionsTheme: appPageTransitionsTheme,
     );
   }
 

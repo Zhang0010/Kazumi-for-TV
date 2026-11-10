@@ -50,7 +50,7 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
         colorSchemeSeed: color,
         progressIndicatorTheme: progressIndicatorTheme2024,
         sliderTheme: sliderTheme2024,
-        pageTransitionsTheme: pageTransitionsTheme2024);
+        pageTransitionsTheme: appPageTransitionsTheme);
     var oledTheme = oledDarkTheme(defaultDarkTheme);
     themeProvider.setTheme(
       ThemeData(
@@ -60,7 +60,7 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
           colorSchemeSeed: color,
           progressIndicatorTheme: progressIndicatorTheme2024,
           sliderTheme: sliderTheme2024,
-          pageTransitionsTheme: pageTransitionsTheme2024),
+          pageTransitionsTheme: appPageTransitionsTheme),
       oledEnhance ? oledTheme : defaultDarkTheme,
     );
     defaultThemeColor = color?.toARGB32().toRadixString(16) ?? 'default';
@@ -75,7 +75,7 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
         colorSchemeSeed: Colors.green,
         progressIndicatorTheme: progressIndicatorTheme2024,
         sliderTheme: sliderTheme2024,
-        pageTransitionsTheme: pageTransitionsTheme2024);
+        pageTransitionsTheme: appPageTransitionsTheme);
     var oledTheme = oledDarkTheme(defaultDarkTheme);
     themeProvider.setTheme(
       ThemeData(
@@ -85,7 +85,7 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
           colorSchemeSeed: Colors.green,
           progressIndicatorTheme: progressIndicatorTheme2024,
           sliderTheme: sliderTheme2024,
-          pageTransitionsTheme: pageTransitionsTheme2024),
+          pageTransitionsTheme: appPageTransitionsTheme),
       oledEnhance ? oledTheme : defaultDarkTheme,
     );
     defaultThemeColor = 'default';

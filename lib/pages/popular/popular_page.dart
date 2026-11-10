@@ -196,7 +196,11 @@ class _PopularPageState extends State<PopularPage> {
         ),
         delegate: SliverChildBuilderDelegate((BuildContext context, int index) {
           return bangumiList.isNotEmpty
-              ? BangumiCardV(bangumiItem: bangumiList[index])
+              // 每张卡单独成层：焦点框缩放 / 图片淡入只重绘这一格，
+              // 不带着整个网格一起重绘（弱 GPU 上滚动掉帧的主要来源）。
+              ? RepaintBoundary(
+                  child: BangumiCardV(bangumiItem: bangumiList[index]),
+                )
               : null;
         }, childCount: bangumiList.isNotEmpty ? bangumiList.length : 10),
       ),

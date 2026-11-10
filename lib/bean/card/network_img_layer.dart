@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/utils/image_extension.dart';
+import 'package:kazumi/utils/low_resource_profile.dart';
 
 class NetworkImgLayer extends StatelessWidget {
   const NetworkImgLayer({
@@ -15,7 +16,7 @@ class NetworkImgLayer extends StatelessWidget {
     this.fadeOutDuration,
     this.fadeInDuration,
     this.origAspectRatio,
-    this.filterQuality = FilterQuality.high,
+    this.filterQuality,
     this.color,
     this.colorBlendMode,
     this.borderRadius,
@@ -29,7 +30,7 @@ class NetworkImgLayer extends StatelessWidget {
   final Duration? fadeOutDuration;
   final Duration? fadeInDuration;
   final double? origAspectRatio;
-  final FilterQuality filterQuality;
+  final FilterQuality? filterQuality;
   final Color? color;
   final BlendMode? colorBlendMode;
   final BorderRadius? borderRadius;
@@ -76,9 +77,16 @@ class NetworkImgLayer extends StatelessWidget {
         memCacheWidth: memCacheWidth,
         memCacheHeight: memCacheHeight,
         fit: fit,
-        fadeOutDuration: fadeOutDuration ?? const Duration(milliseconds: 120),
-        fadeInDuration: fadeInDuration ?? const Duration(milliseconds: 120),
-        filterQuality: filterQuality,
+        // 电视上一次滚屏会同时淡入十几张图，省掉淡入淡出直接省掉这些帧。
+        fadeOutDuration: fadeOutDuration ??
+            (LowResourceProfile.enabled
+                ? Duration.zero
+                : const Duration(milliseconds: 120)),
+        fadeInDuration: fadeInDuration ??
+            (LowResourceProfile.enabled
+                ? Duration.zero
+                : const Duration(milliseconds: 120)),
+        filterQuality: filterQuality ?? LowResourceProfile.imageFilterQuality,
         color: color,
         colorBlendMode: colorBlendMode,
         errorListener: (e) {

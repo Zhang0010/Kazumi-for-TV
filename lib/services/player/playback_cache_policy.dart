@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/network/metered_network_service.dart';
 import 'package:kazumi/services/player/low_memory_mode.dart';
+import 'package:kazumi/utils/low_resource_profile.dart';
 import 'package:kazumi/utils/async_serial_queue.dart';
 import 'package:media_kit/media_kit.dart';
 
@@ -14,7 +15,6 @@ class PlaybackCachePolicy {
         _currentPlayer = currentPlayer;
 
   static const int _lowMemoryBufferSize = 2 * 1024 * 1024;
-  static const int _defaultBufferSize = 1500 * 1024 * 1024;
 
   final bool Function() _isLocalPlayback;
   final Player? Function() _currentPlayer;
@@ -32,7 +32,9 @@ class PlaybackCachePolicy {
         isLocalPlayback: _isLocalPlayback(),
       )
           ? _lowMemoryBufferSize
-          : _defaultBufferSize;
+          // 非低内存模式：电视形态按低配档位给（64 MB），
+          // 上游默认的 1.5 GB 解复用缓存在 2.5 GB 的机子上会把内存吃光。
+          : LowResourceProfile.videoBufferBytes;
 
   void startWatching() {
     if (_settingsSubscription != null) {

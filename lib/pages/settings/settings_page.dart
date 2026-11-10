@@ -151,6 +151,13 @@ String _categoryPath(String location) {
   return location;
 }
 
+/// 左侧一级菜单的先后顺序：遥控器在菜单里上下移动时按这个顺序走，
+/// 不交给几何算法（几何算法会把焦点甩到右边内容区里）。
+final List<String> _railOrder = [
+  for (final group in _settingsGroups)
+    for (final category in group.categories) category.path,
+];
+
 class _SettingsCategorySelected extends Notification {
   const _SettingsCategorySelected(this.path);
 
@@ -175,8 +182,10 @@ class _SettingsPageState extends State<SettingsPage> {
   /// 有自己的 FocusScope，方向键遍历出不了那个 scope，所以需要在这里手动接一下。
   final Map<String, FocusNode> _railFocusNodes = {};
 
-  /// 上一次在右侧内容里的焦点，从一级菜单按右键时还回去。
-  FocusNode? _lastPaneFocus;
+  /// 右侧内容区的焦点 scope。包在 RouterOutlet 外面，这样「从菜单按右键」时
+  /// 只在内容区里找落点——不包的话拿到的是页面级 scope，里面还带着左侧菜单，
+  /// 结果焦点从菜单按右键反而跳到菜单另一项上。
+  final FocusScopeNode _paneScope = FocusScopeNode(debugLabel: 'settings-pane');
 
   FocusNode _railFocusNode(String path) => _railFocusNodes.putIfAbsent(
     path,
@@ -188,35 +197,124 @@ class _SettingsPageState extends State<SettingsPage> {
     for (final node in _railFocusNodes.values) {
       node.dispose();
     }
+    _paneScope.dispose();
     super.dispose();
   }
 
   /// 把焦点送回右侧内容。切了分类之后旧的焦点节点会被销毁，所以退一步
   /// 找嵌套路由自己的 FocusScope，再往里走一格。
-  void _focusIntoPane() {
-    final last = _lastPaneFocus;
-    if (last != null && last.context != null && last.canRequestFocus) {
-      last.requestFocus();
-      return;
-    }
-    // 换过分类之后旧节点已销毁：从 RouterOutlet 往下取一个元素，借它所在的
-    // FocusScope —— 那是嵌套路由自己的 scope，从里面挑第一个可聚焦控件落位。
-    final outletContext = _outletKey.currentContext;
-    if (outletContext is! Element) return;
-    Element? probe;
-    outletContext.visitChildren((element) {
-      probe ??= element;
-    });
-    final probeElement = probe;
-    if (probeElement == null) return;
-    final scope = FocusScope.of(probeElement);
-    for (final node in scope.traversalDescendants) {
-      if (node.context != null) {
+  void _focusIntoPane({int attempt = 0}) {
+    for (final node in _paneScope.traversalDescendants) {
+      if (node is FocusScopeNode) continue;
+      if (node.context != null &&
+          node.canRequestFocus &&
+          _isFocusVisible(node)) {
         node.requestFocus();
         return;
       }
     }
-    scope.requestFocus();
+    // 内容页还没建完（刚切分类的第一帧很常见），下一帧再试。
+    if (attempt < 3) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusIntoPane(attempt: attempt + 1);
+      });
+    }
+  }
+
+  /// 把焦点落到左侧菜单的指定分类上（菜单内上下移动用）。
+  void _focusRailAt(String path) {
+    final node = _railFocusNode(path);
+    if (node.context == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final retry = _railFocusNode(path);
+        retry.requestFocus();
+        _ensureFocusVisible(retry);
+      });
+      return;
+    }
+    node.requestFocus();
+    _ensureFocusVisible(node);
+  }
+
+  /// 把焦点落到左侧一级菜单的当前分类上，并把它滚进可视区。
+  /// 电视上右侧内容按左键走到边界就走这条路。
+  void _focusRail({bool ensureVisible = true}) {
+    final node = _railFocusNode(_selectedCategoryPath);
+    if (node.context == null) {
+      // 节点还没挂到树上（列表刚重建），等一帧再落焦点。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final retry = _railFocusNode(_selectedCategoryPath);
+        retry.requestFocus();
+        if (ensureVisible) _ensureFocusVisible(retry);
+      });
+      return;
+    }
+    node.requestFocus();
+    if (ensureVisible) _ensureFocusVisible(node);
+  }
+
+  /// 焦点正停在左侧菜单的第几项；没有落在菜单里时退回当前选中的分类。
+  int get _railFocusIndex {
+    final primary = FocusManager.instance.primaryFocus;
+    if (primary != null) {
+      for (var i = 0; i < _railOrder.length; i++) {
+        if (_railFocusNodes[_railOrder[i]] == primary) return i;
+      }
+    }
+    return _railOrder.indexOf(_selectedCategoryPath);
+  }
+
+  /// 方向键挪完焦点后确认新焦点「看得见」。
+  ///
+  /// 本应用的焦点框是 TvFocusOverlay 按 primaryFocus 的渲染盒画的，它会跳过
+  /// FocusScope、跳过满屏容器、跳过 16px 以下的小块——焦点落进这些节点时
+  /// 屏幕上没有任何指示，遥控器看起来就是「按了没反应」。这里用同一套判据
+  /// 判断，落空了就撤回到左侧菜单，别把焦点丢在看不见的地方。
+  bool _isFocusVisible(FocusNode? node) {
+    if (node == null || node is FocusScopeNode) return false;
+    final nodeContext = node.context;
+    if (nodeContext == null) return false;
+    final box = nodeContext.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return false;
+    if (box.size.width < 16 || box.size.height < 16) return false;
+    final screen = MediaQuery.maybeSizeOf(nodeContext) ?? Size.zero;
+    if (screen.width > 0 && screen.height > 0) {
+      if (box.size.width * box.size.height >
+          screen.width * screen.height * 0.4) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool get _railHasFocus {
+    final primary = FocusManager.instance.primaryFocus;
+    return primary != null && _railFocusNodes.containsValue(primary);
+  }
+
+  /// 在左侧菜单里按确认（切换分类）之后，新页面会自己 autofocus，遥控器就
+  /// 「跑飞」到右边内容区了——用户本想继续上下挑分类。这里在这一帧和 200ms
+  /// 后再把焦点落回左侧，保证确认键只切内容、不搬家。
+  void _restoreRailFocus() {
+    if (!AppMode.isTv) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_railHasFocus) _focusRail();
+    });
+    Future<void>.delayed(const Duration(milliseconds: 200), () {
+      if (mounted && !_railHasFocus) _focusRail();
+    });
+  }
+
+  void _ensureFocusVisible(FocusNode node) {
+    final nodeContext = node.context;
+    if (nodeContext == null) return;
+    Scrollable.ensureVisible(
+      nodeContext,
+      alignment: 0.5,
+      duration: Duration.zero,
+    );
   }
 
   /// 电视形态下补一条「右侧内容 ←→ 左侧一级菜单」的通路。
@@ -229,13 +327,31 @@ class _SettingsPageState extends State<SettingsPage> {
     if (primary == null) return KeyEventResult.ignored;
     final inRail = _railFocusNodes.containsValue(primary);
 
+    // 焦点在左侧菜单时，↑↓ 只在菜单里上下走：几何遍历会把焦点甩到右边
+    // 内容区（内容行又宽又高，正好压在菜单项的右下方向），遥控器像失灵。
+    if (inRail &&
+        (event.logicalKey == LogicalKeyboardKey.arrowUp ||
+            event.logicalKey == LogicalKeyboardKey.arrowDown)) {
+      final index = _railFocusIndex;
+      if (index < 0) return KeyEventResult.ignored;
+      final delta = event.logicalKey == LogicalKeyboardKey.arrowDown ? 1 : -1;
+      final target = index + delta;
+      if (target < 0 || target >= _railOrder.length) {
+        return KeyEventResult.handled; // 到顶/到底就停住，不往外跳
+      }
+      _focusRailAt(_railOrder[target]);
+      return KeyEventResult.handled;
+    }
+
     if (event.logicalKey == LogicalKeyboardKey.arrowLeft && !inRail) {
       // 右侧内容里还能往左走就照常走；走不动说明到边界了，交给一级菜单。
       if (primary.focusInDirection(TraversalDirection.left)) {
-        return KeyEventResult.handled;
+        final moved = FocusManager.instance.primaryFocus;
+        if (moved != null && moved != primary && _isFocusVisible(moved)) {
+          return KeyEventResult.handled;
+        }
       }
-      _lastPaneFocus = primary;
-      _railFocusNode(_selectedCategoryPath).requestFocus();
+      _focusRail();
       return KeyEventResult.handled;
     }
 
@@ -260,19 +376,21 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _replaceCategory(String path) {
+    final fromRail = _railHasFocus;
     final outlet = _outletKey.currentState!;
     // Nested pushes leave _location unchanged, so check the stack as well.
     if (!outlet.canPop && !_isSecondaryRoute && _selectedCategoryPath == path) {
       return;
     }
     _categoryNavigation = null;
-    _lastPaneFocus = null; // 旧内容会被销毁，别指着已废弃的节点
     outlet.navigate(path);
     setState(() => _location = path);
+    if (fromRail) _restoreRailFocus();
   }
 
   Future<void> _pushCategory(String path) async {
     if (_categoryNavigation != null) return;
+    final fromRail = _railHasFocus;
     final navigation = Object();
     final previousLocation = _location;
     _categoryNavigation = navigation;
@@ -284,6 +402,7 @@ class _SettingsPageState extends State<SettingsPage> {
       _categoryNavigation = null;
       _location = previousLocation;
     });
+    if (fromRail) _restoreRailFocus();
   }
 
   void _goBack() {
@@ -346,7 +465,10 @@ class _SettingsPageState extends State<SettingsPage> {
                               pageTransitionsTheme:
                                   settingsPageTransitionsTheme,
                             ),
-                            child: RouterOutlet(key: _outletKey),
+                            child: FocusScope(
+                              node: _paneScope,
+                              child: RouterOutlet(key: _outletKey),
+                            ),
                           ),
                         ),
                       ),
@@ -404,44 +526,55 @@ class _SettingsMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 电视形态用 SingleChildScrollView + Column 而不是 ListView：ListView
+    // 只建可视区内的子项，滚到下面的分类（比如「关于」）时那个焦点节点根本
+    // 没挂到树上，右侧内容按左键 requestFocus 就成了空操作——表现出来就是
+    // 「按左键回不到左边」。16 个条目一次全建，代价可以忽略。
+    final children = <Widget>[
+      for (final group in _settingsGroups)
+        if (wide) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(28, 16, 28, 8),
+            child: SectionHeader(title: Text(group.title)),
+          ),
+          for (final category in group.categories)
+            _RailDestination(
+              category: category,
+              selected: selectedPath == category.path,
+              focusNode: focusNodeFor?.call(category.path),
+              onTap: () => onSelect(category.path),
+            ),
+        ] else
+          Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: ContentSection.group(
+              title: group.title,
+              children: [
+                for (final category in group.categories)
+                  SettingsCategoryTile(
+                    icon: category.icon,
+                    title: category.label,
+                    description: category.description,
+                    onTap: () => onSelect(category.path),
+                  ),
+              ],
+            ),
+          ),
+    ];
     return ScrollConfiguration(
       behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-      child: ListView(
-        padding: wide
-            ? const EdgeInsets.fromLTRB(4, 0, 0, 12)
-            : const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        children: [
-          for (final group in _settingsGroups)
-            if (wide) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(28, 16, 28, 8),
-                child: SectionHeader(title: Text(group.title)),
+      child: wide
+          ? SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(4, 0, 0, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: children,
               ),
-              for (final category in group.categories)
-                _RailDestination(
-                  category: category,
-                  selected: selectedPath == category.path,
-                  focusNode: focusNodeFor?.call(category.path),
-                  onTap: () => onSelect(category.path),
-                ),
-            ] else
-              Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: ContentSection.group(
-                  title: group.title,
-                  children: [
-                    for (final category in group.categories)
-                      SettingsCategoryTile(
-                        icon: category.icon,
-                        title: category.label,
-                        description: category.description,
-                        onTap: () => onSelect(category.path),
-                      ),
-                  ],
-                ),
-              ),
-        ],
-      ),
+            )
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              children: children,
+            ),
     );
   }
 }

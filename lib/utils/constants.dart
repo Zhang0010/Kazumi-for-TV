@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:kazumi/utils/low_resource_profile.dart';
 import 'package:kazumi/request/config/api_endpoints.dart';
 
 class StyleString {
@@ -36,6 +37,22 @@ const _pageTransitionBuilders = <TargetPlatform, PageTransitionsBuilder>{
 
 const PageTransitionsTheme pageTransitionsTheme2024 =
     PageTransitionsTheme(builders: _pageTransitionBuilders);
+
+/// 全应用主题用的页面转场。
+/// 电视形态改成单层的淡入前移（Material 3 FadeForwards），
+/// 换掉 Cupertino 的滑动转场——它要同时合成前后两整页，A53 / Mali-G31 上必掉帧。
+PageTransitionsTheme get appPageTransitionsTheme {
+  if (!LowResourceProfile.useShortRouteTransitions) {
+    return pageTransitionsTheme2024;
+  }
+  return const PageTransitionsTheme(builders: {
+    TargetPlatform.android: FadeForwardsPageTransitionsBuilder(),
+    TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
+    TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
+  });
+}
 
 // Applied only to the settings navigator; fullscreen routes use the app theme.
 final PageTransitionsTheme settingsPageTransitionsTheme = PageTransitionsTheme(

@@ -20,6 +20,7 @@ import 'package:kazumi/pages/error/storage_error_page.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/utils/app_mode.dart';
+import 'package:kazumi/utils/low_resource_profile.dart';
 import 'package:kazumi/services/platform/desktop_window_config.dart';
 import 'package:kazumi/services/platform/webview_feature_service.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
@@ -81,7 +82,20 @@ void main() async {
     );
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
-  await DownloadDirectoryService().restoreAccess();
+  // 图片解码缓存按形态收口：电视上 48 MB / 200 张就够，
+  // 默认的 100 MB / 1000 张在 2.5 GB 的机子上是纯浪费。
+  final imageCache = PaintingBinding.instance.imageCache;
+  imageCache.maximumSizeBytes = LowResourceProfile.imageCacheBytes;
+  imageCache.maximumSize = LowResourceProfile.imageCacheCount;
+
+  if (LowResourceProfile.enabled) {
+    // 下载目录授权与首屏无关，挪到首帧之后，冷启动少等一次 IPC。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      DownloadDirectoryService().restoreAccess().ignore();
+    });
+  } else {
+    await DownloadDirectoryService().restoreAccess();
+  }
   final showWindowButton = DesktopWindowConfig.showWindowButton;
   if (isDesktop()) {
     await windowManager.ensureInitialized();
