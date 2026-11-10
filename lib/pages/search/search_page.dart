@@ -65,6 +65,10 @@ class _SearchPageState extends State<SearchPage> {
   /// 保持「焦点跟着同一部番剧走」，不至于一刷新就掉到别处或干脆没有焦点。
   final Map<int, FocusNode> _cardNodes = {};
 
+  /// 网格当前列数（每行几张卡），由 `_resultSlivers` 布局时写回。
+  /// 「第一行」判定用它算序号，不靠读第一张卡的 rect。
+  int _gridColumns = 5;
+
   /// 结果工具栏的两颗胶囊（排序 / 筛选），用于给网格第一行按上键搭桥。
   final FocusNode _sortFocus = FocusNode(debugLabel: 'tv-search-sort');
   final FocusNode _filterFocus = FocusNode(debugLabel: 'tv-search-filter');
@@ -158,30 +162,46 @@ class _SearchPageState extends State<SearchPage> {
     () => FocusNode(debugLabel: 'search-result:${item.id}'),
   );
 
+  /// 焦点节点是否真的还挂在控件树上。
+  ///
+  /// `FocusNode.detach()` 不会清空 `context`，只看 `context != null` 会踩空指针：
+  /// `rect` 内部是 `context!.findRenderObject()!`，控件已被回收时直接抛。
+  bool _isNodeAlive(FocusNode? node) {
+    final ctx = node?.context;
+    return ctx != null && ctx.mounted;
+  }
+
   bool _focusCardAt(int index) {
     final items = _filteredResults();
     if (index < 0 || index >= items.length) return false;
     final node = _cardNode(items[index]);
-    if (node.context == null) return false;
+    if (!_isNodeAlive(node)) return false;
     node.requestFocus();
     return true;
   }
 
   /// 焦点是否还在搜索框那一行（工具栏上方）。
   bool _isAboveToolbar(FocusNode node) {
-    if (_sortFocus.context == null || node.context == null) return false;
-    return node.rect.bottom <= _sortFocus.rect.top + 2;
+    if (!_isNodeAlive(node) || !_isNodeAlive(_sortFocus)) return false;
+    try {
+      return node.rect.bottom <= _sortFocus.rect.top + 2;
+    } catch (_) {
+      return false;
+    }
   }
 
-  /// 焦点是否在第一行结果卡上：拿第一张卡的 top 当行基准，
-  /// 不做列数推算，缩放导致的几像素误差用 8 容忍。
+  /// 焦点是否在第一行结果卡上——按序号判定（index < 列数）。
+  ///
+  /// 不能拿第一张卡片的 rect 当基准：网格是懒构建的，滚到很下面时第一张卡
+  /// 早就被回收了，读它的 `rect` 会在按键处理第一行抛异常，
+  /// 于是整个 ↑ 分支静默中断，表现就是「往下选了很多张之后按 ↑ 上不去」。
   bool _isFirstRowCard(FocusNode node) {
     final items = _filteredResults();
-    if (items.isEmpty || node.context == null) return false;
-    if (!_cardNodes.values.any((n) => identical(n, node))) return false;
-    final first = _cardNodes[items.first.id];
-    if (first == null || first.context == null) return false;
-    return (node.rect.top - first.rect.top).abs() < 8;
+    final limit = math.min(items.length, _gridColumns);
+    for (var i = 0; i < limit; i++) {
+      if (identical(_cardNodes[items[i].id], node)) return true;
+    }
+    return false;
   }
 
   /// 电视形态的页内按键：补齐「工具栏 ⇄ 网格」这一段。
@@ -195,6 +215,17 @@ class _SearchPageState extends State<SearchPage> {
       return KeyEventResult.ignored;
     }
     if (!_hasSearched) return KeyEventResult.ignored;
+    // 兜底：这里一旦抛异常，KeyEventResult 就返回不了，方向键会静默失效。
+    // 出任何问题都退回默认遍历，绝不让按键变哑。
+    try {
+      return _handleTvKeysInner(event);
+    } catch (e) {
+      _dbg('key handler failed: $e');
+      return KeyEventResult.ignored;
+    }
+  }
+
+  KeyEventResult _handleTvKeysInner(KeyEvent event) {
     final primary = FocusManager.instance.primaryFocus;
     if (primary == null) return KeyEventResult.ignored;
     if (event.logicalKey == LogicalKeyboardKey.arrowDown &&
@@ -242,7 +273,7 @@ class _SearchPageState extends State<SearchPage> {
         final busy = _controller.isLoading;
         final current = SearchParser(_submittedQuery ?? '').toFilterState();
         return Padding(
-          padding: const EdgeInsets.only(top: 2, bottom: 10),
+          padding: const EdgeInsets.only(top: 0, bottom: 8),
           child: Row(
             children: [
               Expanded(
@@ -325,7 +356,8 @@ class _SearchPageState extends State<SearchPage> {
               hint: '搜索番剧名称',
               dialogTitle: '搜索番剧',
               autofocus: true,
-              minHeight: 64,
+              minHeight: 52,
+              dense: true,
               onChanged: (_) => setState(() {}),
               onSubmitted: _submit,
             ),
@@ -386,7 +418,10 @@ class _SearchPageState extends State<SearchPage> {
 
   Widget _header() => Padding(
     key: _searchHeaderKey,
-    padding: EdgeInsets.only(top: _hasSearched ? 8 : 24, bottom: 16),
+    padding: EdgeInsets.only(
+      top: _hasSearched ? 10 : 24,
+      bottom: _hasSearched ? 8 : 16,
+    ),
     child: _searchField(),
   );
 
@@ -495,9 +530,24 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  List<Widget> _resultSlivers(double width, {bool withHeader = true}) {
+  List<Widget> _resultSlivers(
+    double width, {
+    bool withHeader = true,
+    double? viewportHeight,
+  }) {
     final allItems = _controller.bangumiList.toList();
     final items = _filteredResults();
+    // 电视形态和主页一样 6 列；行高按可视高度算成「两行整 + 半行」，
+    // 让下面永远露出一点内容，同时每屏能看满两排。
+    const tvColumns = 6;
+    _gridColumns = AppMode.isTv
+        ? tvColumns
+        : math.max(2, (width / 180).floor());
+    // 2.1 行：两行整卡 + 底下露出一点点，再往下就要把封面压扁了
+    // （6 列时卡片只有 176 宽，行高再小封面就变成横条）。
+    final double? tvRowExtent = AppMode.isTv && viewportHeight != null
+        ? math.max(0, (viewportHeight - 2 * 20) / 2.05)
+        : null;
     final busy = _controller.isLoading;
     final failed = _controller.isTimeOut;
     final submitted = SearchParser(_submittedQuery!).toFilterState();
@@ -596,6 +646,8 @@ class _SearchPageState extends State<SearchPage> {
           width: width,
           showRating: GStorage.getSetting(SettingsKeys.showRating),
           focusNodeFor: _cardNode,
+          columns: AppMode.isTv ? tvColumns : null,
+          rowExtent: tvRowExtent,
         ),
       // 电视形态不放「加载更多」按钮：滚到底自动续拉，
       // 按钮本身还成了「一按就消失的焦点目标」（加载中它被换成指示器）。
@@ -644,10 +696,14 @@ class _SearchPageState extends State<SearchPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const SysAppBar(
-        backgroundColor: Colors.transparent,
-        title: Text('番剧搜索'),
-      ),
+      // 电视出结果后不要顶部标题栏：那一条「番剧搜索 + 返回箭头」白占
+      // 五十多像素，网格被压得只剩两行半还特别扁。返回用遥控器 BACK 键。
+      appBar: AppMode.isTv && _hasSearched
+          ? null
+          : const SysAppBar(
+              backgroundColor: Colors.transparent,
+              title: Text('番剧搜索'),
+            ),
       body: SafeArea(
         top: false,
         child: Focus(
@@ -693,9 +749,15 @@ class _SearchPageState extends State<SearchPage> {
                       child: _tvToolbar(),
                     ),
                     Expanded(
-                      child: Observer(
-                        builder: (_) => scrollView(
-                          _resultSlivers(width, withHeader: false),
+                      child: LayoutBuilder(
+                        builder: (_, gridBox) => Observer(
+                          builder: (_) => scrollView(
+                            _resultSlivers(
+                              width,
+                              withHeader: false,
+                              viewportHeight: gridBox.maxHeight,
+                            ),
+                          ),
                         ),
                       ),
                     ),

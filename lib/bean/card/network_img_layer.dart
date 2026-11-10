@@ -20,6 +20,7 @@ class NetworkImgLayer extends StatelessWidget {
     this.color,
     this.colorBlendMode,
     this.borderRadius,
+    this.alignment,
   });
 
   final String? src;
@@ -34,6 +35,7 @@ class NetworkImgLayer extends StatelessWidget {
   final Color? color;
   final BlendMode? colorBlendMode;
   final BorderRadius? borderRadius;
+  final Alignment? alignment;
 
   static Widget heroFlightShuttleBuilder(
     BuildContext flightContext,
@@ -47,15 +49,13 @@ class NetworkImgLayer extends StatelessWidget {
     final heroContext = flightDirection == HeroFlightDirection.push
         ? fromHeroContext
         : toHeroContext;
-    final hero =
-        flightDirection == HeroFlightDirection.push ? fromHero : toHero;
+    final hero = flightDirection == HeroFlightDirection.push
+        ? fromHero
+        : toHero;
 
     return InheritedTheme.captureAll(
       heroContext,
-      Material(
-        type: MaterialType.transparency,
-        child: hero.child,
-      ),
+      Material(type: MaterialType.transparency, child: hero.child),
     );
   }
 
@@ -77,12 +77,15 @@ class NetworkImgLayer extends StatelessWidget {
         memCacheWidth: memCacheWidth,
         memCacheHeight: memCacheHeight,
         fit: fit,
+        alignment: alignment ?? Alignment.center,
         // 电视上一次滚屏会同时淡入十几张图，省掉淡入淡出直接省掉这些帧。
-        fadeOutDuration: fadeOutDuration ??
+        fadeOutDuration:
+            fadeOutDuration ??
             (LowResourceProfile.enabled
                 ? Duration.zero
                 : const Duration(milliseconds: 120)),
-        fadeInDuration: fadeInDuration ??
+        fadeInDuration:
+            fadeInDuration ??
             (LowResourceProfile.enabled
                 ? Duration.zero
                 : const Duration(milliseconds: 120)),
@@ -147,10 +150,9 @@ class NetworkImgLayer extends StatelessWidget {
       height: height,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: Theme.of(context)
-            .colorScheme
-            .onInverseSurface
-            .withValues(alpha: 0.4),
+        color: Theme.of(
+          context,
+        ).colorScheme.onInverseSurface.withValues(alpha: 0.4),
         borderRadius: _borderRadius,
       ),
       child: type == 'bg'
