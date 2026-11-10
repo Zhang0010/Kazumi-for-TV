@@ -344,6 +344,70 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
     });
   }
 
+  /// 按渲染位置把集数格子排成「行 × 列」矩阵，行内按 x 排序。
+  List<List<int>> _episodeRows() {
+    final items = <(int, double, double)>[];
+    for (final entry in _episodeKeys.entries) {
+      final box = entry.value.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.hasSize) continue;
+      final offset = box.localToGlobal(Offset.zero);
+      items.add((entry.key, offset.dy, offset.dx));
+    }
+    items.sort((a, b) {
+      final byY = a.$2.compareTo(b.$2);
+      return byY != 0 ? byY : a.$3.compareTo(b.$3);
+    });
+    final rows = <List<int>>[];
+    double? rowY;
+    for (final item in items) {
+      if (rowY == null || (item.$2 - rowY).abs() > 8) {
+        rows.add(<int>[item.$1]);
+        rowY = item.$2;
+      } else {
+        rows.last.add(item.$1);
+      }
+    }
+    return rows;
+  }
+
+  /// 抽屉内的方向键移动：按行列走，走到边界就停住。
+  /// 交给几何遍历的话，最右/最下再按一次会把焦点甩到抽屉外面去。
+  void _moveEpisodeFocus(LogicalKeyboardKey key) {
+    final rows = _episodeRows();
+    if (rows.isEmpty) return;
+    int? row;
+    int? col;
+    for (var r = 0; r < rows.length; r++) {
+      final c = rows[r].indexWhere(
+        (e) => _episodeFocusNodes[e]?.hasPrimaryFocus ?? false,
+      );
+      if (c >= 0) {
+        row = r;
+        col = c;
+        break;
+      }
+    }
+    if (row == null || col == null) return;
+    var nextRow = row;
+    var nextCol = col;
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      if (col == 0) return; // 已在最左：停住
+      nextCol = col - 1;
+    } else if (key == LogicalKeyboardKey.arrowRight) {
+      if (col == rows[row].length - 1) return;
+      nextCol = col + 1;
+    } else if (key == LogicalKeyboardKey.arrowUp) {
+      if (row == 0) return;
+      nextRow = row - 1;
+      nextCol = col.clamp(0, rows[nextRow].length - 1);
+    } else {
+      if (row == rows.length - 1) return;
+      nextRow = row + 1;
+      nextCol = col.clamp(0, rows[nextRow].length - 1);
+    }
+    _episodeFocusNodes[rows[nextRow][nextCol]]?.requestFocus();
+  }
+
   void _closeDrawer() {
     setState(() => _drawerOpen = false);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -596,13 +660,15 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
               child: Container(color: Colors.black54),
             ),
           ),
-          // 这一层只做兜底：焦点落在路由的 FocusScope 上（画面上一个框都没有）
-          // 时，方向键先给选集挑一个落脚点，别让人以为界面卡死。
+          // 选集抽屉的方向键全部自己算：几何遍历走到边上会把焦点甩到抽屉外面
+          // （屏幕上一个框都没有），所以这里按「网格行列」移动，到边界就停住。
           Focus(
             canRequestFocus: false,
             skipTraversal: true,
             onKeyEvent: (node, event) {
-              if (event is! KeyDownEvent) return KeyEventResult.ignored;
+              if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+                return KeyEventResult.ignored;
+              }
               final key = event.logicalKey;
               final isArrow =
                   key == LogicalKeyboardKey.arrowUp ||
@@ -611,14 +677,15 @@ class _PlayerTvOsdState extends State<PlayerTvOsd> {
                   key == LogicalKeyboardKey.arrowRight;
               if (!isArrow) return KeyEventResult.ignored;
               final current = FocusManager.instance.primaryFocus;
-              if (current == null ||
-                  current == widget.playerFocusNode ||
-                  current is FocusScopeNode ||
-                  current.context == null) {
+              final focusedInGrid =
+                  current != null &&
+                  _episodeFocusNodes.values.any((n) => n == current);
+              if (!focusedInGrid) {
                 _focusTopmostEpisode();
                 return KeyEventResult.handled;
               }
-              return KeyEventResult.ignored;
+              _moveEpisodeFocus(key);
+              return KeyEventResult.handled;
             },
             child: Container(
               width: 560,
