@@ -31,20 +31,29 @@
 - HarmonyOS 5.0 及以上 (位于 [分支仓库](https://github.com/ErBWs/Kazumi/releases/latest)，需要 [侧载](https://kazumi.app/docs/misc/how-to-install-in-ohos))
 - Web 浏览器 (位于 [分支仓库](https://github.com/0Chencc/KazumiWeb/releases/latest)，需要在 Windows / Linux / MacOS 电脑或通过 Docker 运行服务端，同一局域网内的设备通过浏览器访问)
 
-## 屏幕截图
+## 界面预览
+
+首页、搜索、番剧详情、播放这四个最常用的界面，全部按电视遥控器的逻辑重做：焦点框始终看得见，
+方向键 + OK + 返回就能走完整个流程，不用凑到屏幕前点小按钮。
 
 <table>
   <tr>
-    <td><img alt="homepage" src="static/screenshot/img_1.png"></td>
-    <td><img alt="timetable" src="static/screenshot/img_2.png"></td>
-    <td><img alt="details" src="static/screenshot/img_3.png"></td>
+    <td width="50%"><img alt="首页" src="docs/tv/screenshots/01-home.jpg"><br><sub>首页：类型胶囊条 + 6 列海报网格，焦点框跟在遥控器走</sub></td>
+    <td width="50%"><img alt="搜索" src="docs/tv/screenshots/02-search.jpg"><br><sub>搜索：胶囊输入弹窗，搜完焦点自动落在第一张结果</sub></td>
+  </tr>
   <tr>
-  <tr>
-    <td><img alt="selection-page" src="static/screenshot/img_4.png"></td>
-    <td><img alt="rules-mange" src="static/screenshot/img_5.png"></td>
-    <td><img alt="rules-edit" src="static/screenshot/img_6.png"></td>
-  <tr>
+    <td width="50%"><img alt="番剧详情" src="docs/tv/screenshots/03-detail.jpg"><br><sub>详情：海报、评分透视、追番与观看一目了然</sub></td>
+    <td width="50%"><img alt="播放" src="docs/tv/screenshots/04-player.jpg"><br><sub>播放：无控件满屏画面，↓ 唤出底排控件与整屏进度条</sub></td>
+  </tr>
 </table>
+
+**模式切换**：「我的 → 设置 → 界面设置 → 界面模式」内置了三个选项 —— `跟随构建` / `电视（遥控器）` / `手机 / 平板`。
+想用触屏、或者遥控器本身带触摸板，切回「手机 / 平板」就是原版 Kazumi 的界面，重启应用生效。
+
+<img alt="界面模式" src="docs/tv/screenshots/05-settings-mode.jpg">
+
+另外，针对大多数电视、投影和盒子普遍偏弱的性能做了流畅度优化：解复用缓存与图片缓存收到低配友好的量级、
+海报解码精度降一档、每张卡片独立重绘、关掉转场飞行与图片淡入淡出（细节见 1.0.6 beta 更新日志）。
 
 ## 功能 / 开发计划
 
